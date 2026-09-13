@@ -9,6 +9,7 @@ TACACS+ authentication, authorization and accounting; device security auditing a
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](#requirements)
 
 ---
+<img width="1595" height="785" alt="image" src="https://github.com/user-attachments/assets/452082ee-86a7-4608-932e-64727d8fe783" />
 
 ## What NetOpsGuard does
 
@@ -63,6 +64,7 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full technical histor
 - [License](#license)
 
 ---
+<img width="1580" height="840" alt="image" src="https://github.com/user-attachments/assets/1186c8a8-d6cc-4fbf-95d4-2a1328001a42" />
 
 ## Why NetOpsGuard Exists
 
@@ -101,6 +103,7 @@ The TACACS+ engine itself is **never modified**. NetOpsGuard only ever *configur
 | **GUI** | Single-window shell with client-side view transitions across every page, a global Apply Configuration button, ESC-to-close with unsaved-changes protection, modern scrollbars, content-sized modals with an always-visible sticky footer |
 
 ---
+<img width="1602" height="856" alt="image" src="https://github.com/user-attachments/assets/dab193fc-126a-4805-bd38-1f6c23fae718" />
 
 ## Architecture Overview
 
