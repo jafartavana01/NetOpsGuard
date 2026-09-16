@@ -27,6 +27,565 @@ and every RADIUS nav entry is confirmed to resolve to a registered
 route. A "the regex ran without error" result is not evidence the edit
 happened.
 
+### Security — RBAC audit: 5 permissions offered in the UI but enforced nowhere (fixed)
+
+Second audit finding, and a systematic one. All 199 API endpoints were
+inventoried mechanically from their decorators rather than by reading.
+
+**The flaw.** The permission catalogue defines 31 permissions and the
+role editor offers every one of them. Five were enforced at **zero**
+endpoints: `config:apply`, `config:view`, `diagnostics:view`,
+`groups:view`, `tacacs_users:view`. Two more were enforced at only some
+of their endpoints.
+
+Concretely: an administrator whose role granted only `security:view`
+could **apply configuration to the daemon**, restore an old
+configuration version, and create or delete TACACS+ users and groups --
+because those endpoints accepted any authenticated admin.
+
+That is worse than a missing check, because the role editor told the
+operator the permission mattered. Withholding `config:apply` protected
+nothing.
+
+**Fixed**: 34 endpoints across six modules now require their matching
+permission.
+
+    before: 128 permission-gated, 31 superadmin,  38 any-admin, 2 open
+    after:  162 permission-gated, 31 superadmin,   4 any-admin, 2 open
+
+The 4 remaining any-admin endpoints are reads that expose nothing
+role-specific (`/auth/me`, `/system/status`, the static RADIUS
+dictionary, the device list without secrets) and are allow-listed
+explicitly. The 2 open endpoints are login and logout.
+
+**Four permissions remain unenforced, and are documented rather than
+"fixed".** `admin_users:*` and `platform_settings:write` guard
+endpoints that are SUPERADMIN-ONLY -- stricter than the permission.
+Relaxing them to permission-based would WEAKEN them, so a note in
+`permissions.py` records that, to stop a future reader loosening them
+in the name of consistency. `security:remediate` has no implementation
+yet and now says so.
+
+### Security — cleartext credentials served by the raw log endpoint (fixed)
+
+Found while auditing which endpoints expose what.
+
+`/api/tacacs-logs/authorization` serves the authorization log as RAW
+text. That log records each command exactly as typed, so
+`username admin password s3cret` sits in it in cleartext -- established
+earlier from a real deployment, where the accounting log masked the
+same command and this one did not.
+
+Credential masking had been added to the parsed accounting API. This
+endpoint bypassed it entirely, which made it the easiest place in the
+product to read a device password. The same masking now applies, and
+both raw-log endpoints require `diagnostics:view` instead of accepting
+any authenticated admin.
+
+### Added — `tests/test_security_rbac.py`
+
+Static authorization-coverage tests: reads route decorators and the
+permission catalogue rather than starting the app, so they need no
+database and cannot be defeated by a fixture that happens to be a
+superadmin.
+
+Asserts every endpoint is authenticated (bar the login flow), every
+write is permission-gated or superadmin-only, every read is gated or
+explicitly allow-listed, and every catalogue permission is enforced
+somewhere or documented as deliberately not.
+
+**Verified it catches a regression**: removing the `config:apply` guard
+from `POST /api/config/apply` produces
+`FAIL any-admin write: routes_config.py POST /apply`.
+
+Worth recording that my first attempt at that verification appeared to
+show the test passing with the vulnerability present. The revert had
+silently patched a different function -- the test was fine, my
+experiment was not. A regression test that "passes" after a revert
+deserves a second look at the revert before the test is trusted.
+
+---
+
+### Security — TACACS+ configuration injection via command patterns (CONFIRMED, fixed)
+
+First finding of the security audit, and a real privilege escalation.
+
+**The flaw.** A command pattern is emitted between slash delimiters:
+
+    if (cmd =~ /<pattern>/) { permit }
+
+The validator checked only that the pattern COMPILED as a regular
+expression. `x/ } permit } ` compiles perfectly and generates:
+
+    if (cmd =~ /x/ } permit } /) { deny }
+
+-- which closes the regex and the rule early, turning a deny into a
+permit-everything. Anyone able to edit a command set could rewrite
+arbitrary authorization rules. That is vertical privilege escalation,
+not a formatting bug.
+
+Demonstrated by generating the output, not by reading the code.
+
+**The comment above the emission asserted this could not happen** --
+"It is NOT interpolated into anything that could break out of the
+surrounding script block". That claim is why the gap survived. It is
+now corrected in place, because the next person will read it too.
+
+**Fixed in two places, deliberately.** The schema rejects dangerous
+patterns on input; the compiler refuses to EMIT them. Input validation
+alone would not protect rows already in the database, nor any future
+code path that writes a rule without going through the schema. An
+unsafe stored rule now excludes its policy with a clear reason, which
+the apply path already handles, rather than breaking the apply.
+
+**ReDoS too**: nested quantifiers such as `(a+)+` are rejected. That
+regex is evaluated by the DAEMON on every command authorization, so a
+pathological pattern stalls AAA itself rather than merely a page.
+
+**Two false positives found and fixed before shipping** -- both would
+have broken legitimate use:
+
+* Banning `/` outright rejected `interface [A-Za-z]+[0-9/]+`, a normal
+  way to match `GigabitEthernet0/1`. `/` stays forbidden (emitting it
+  escaped as `\/` is unconfirmed syntax, and guessing at escapes is the
+  same mistake in a new place), but the error now names the working
+  alternative: `.` matches any character.
+* Banning backslash broke `^show(\s|$)` -- caught because the existing
+  authorization test failed. `\s`, `\d` and `\.` are ordinary regex.
+  Only a TRAILING backslash is dangerous, since it escapes the closing
+  delimiter, so that is what is refused now.
+
+The second was caught only because a test exercised a real pattern. A
+security fix that breaks legitimate configuration is its own kind of
+outage.
+
+**New `tests/test_security_command_pattern.py`**: 12 injection payloads
+all rejected, 11 legitimate patterns all accepted, and the `/` message
+asserted to name a workaround. The authorization test's loader now
+pulls in the real guard rather than stubbing it -- a stub would let the
+test keep passing if the guard were removed.
+
+### Audit findings so far — areas checked clean
+
+* **OS command execution**: no `shell=True`, `os.system`, `os.popen`,
+  `eval` or `exec` anywhere in `app/` or `installer/`. Execution is
+  argv-list only, by explicit design.
+* **SQL injection**: no raw, f-string or concatenated SQL. ORM
+  throughout.
+* **Identifier injection**: all seven name validators (device, group,
+  user, policy, command set, device group, monitoring) share one
+  pattern and block all 13 config-injection payloads tested, including
+  brace, quote, newline, backtick, `$()` and path traversal.
+
+---
+
+### Fixed — removed lockout rule generation: tac_plus-ng cannot match a single user
+
+Correctly challenged: tac_plus-ng matches on GROUP membership, not on
+individual users. It does.
+
+**And this codebase already said so.** `_compile_condition_leaf`, a few
+hundred lines above the function I added, documents it and REFUSES to
+compile a per-user condition:
+
+    Direct per-user matching (`user` object type, any operator) --
+    NOT compilable. Every confirmed real tac_plus-ng example matches
+    via `member == <group>`, never a bare username.
+
+I emitted `user == "u2" && device == R1` anyway, in the same file,
+without reading the decision recorded above it. Worse, I wrote a
+paragraph in the previous entry about being careful with unproven
+syntax -- while the proof that this particular token was wrong was
+already in the file.
+
+`tac_plus-ng -P` would have caught it before installation, so it could
+not have broken a running service. But it would have produced a lockout
+that silently never applied while the GUI showed the user as locked. A
+safety control that reports protection it is not providing is worse
+than no control, because it is believed.
+
+Generation now emits nothing, with the reasoning recorded where the
+next person will look.
+
+**What is actually achievable, now documented in
+`docs/ARCHITECTURE.md`:**
+
+* **Local users** -- expressible. The platform owns their `user { }`
+  block and its `member = <group>` line, so a dedicated deny group
+  works using only confirmed syntax. The cost is real: a deny group is
+  per-device, so per-user-per-device lockout needs a rule per
+  (group, device) pair.
+* **Directory users** -- NOT expressible from generated configuration.
+  Their membership is resolved by MAVIS from Active Directory at
+  authentication time. Nothing this platform writes into
+  `tac_plus-ng.conf` changes what AD reports. Enforcing lockout for
+  them needs the platform inside the authentication path -- a MAVIS
+  hook, with the risk that a fault there affects every device login.
+
+The models, the event history and the settings remain: they are correct
+and are needed by any of the workable designs. The action rate limits
+for apply / SSH push / bulk operations are unaffected -- those are
+platform operations, enforced in the request path, and were never
+dependent on this.
+
+---
+
+### Added — security protection foundation: temporary per-device authentication lockout
+
+Building the approach as directed: apply a temporary deny rule, and
+when it expires remove ONLY that rule, leaving anything an
+administrator changed meanwhile intact.
+
+**Why that works cleanly here.** The whole configuration is derived
+from database state on every compile. So a lockout appearing or
+expiring never disturbs anything else -- policies, devices and groups
+changed in the interim are re-emitted from their own records rather
+than preserved by luck. Removing a lockout removes exactly that rule
+and nothing more, which is the property asked for, and it falls out of
+the existing design rather than needing a patching mechanism.
+
+**Two tables, deliberately separate**: `security_lockouts` holds
+current state only; `security_events` is append-only history that
+survives expiry, so "why was u2 locked out last Tuesday" stays
+answerable.
+
+**Scope is (user, device, action)** -- never username alone. Locking u2
+out of every device because of a fumbled password on R1 turns a typo
+into an outage.
+
+**Usernames are stored by name, not foreign key.** A TACACS+ user may
+come from Active Directory and have no row in this database, so a
+foreign key would silently exclude exactly the users most worth
+locking.
+
+**Concurrency** is handled by a unique constraint on the lockout scope
+rather than read-then-write, so two simultaneous detections cannot both
+create a lockout for the same user and device.
+
+**On the one piece of unproven syntax, stated plainly.** `member ==`
+and `device ==` are already proven against a real deployment by the
+rest of this compiler. `user == "name"` is NOT -- it appears nowhere
+else. Rather than assume it, the generated configuration is validated
+by `tac_plus-ng -P` before anything is installed, which the compiler
+already does for every candidate. An unsupported token therefore fails
+as a rejected candidate, not as a broken AAA service.
+
+That check is the difference between shipping this and guessing. The
+last two log formats I inferred were both wrong.
+
+**Lockout rules are emitted FIRST** in the ruleset: tac_plus-ng takes
+the first matching rule, so a deny placed after a permitting policy
+would never fire. Verified by assertion, not by reading.
+
+Rule names are synthesised rather than built from usernames, since a
+username can contain characters that are not valid identifiers in a
+file the daemon parses. Values are quoted through the compiler's
+existing `_quote`.
+
+**Still to build**: the detector that reads failures from the access
+log, the expiry sweeper, the apply-triggering, the action rate limits
+for apply/SSH/bulk operations, the GUI and the tests. The generation
+half is done and verified first because everything else depends on the
+rule being correct.
+
+---
+
+### Investigated — monitoring quick-add: no fault found in the code, and one I nearly introduced
+
+Reported as not working. Traced the whole path and found the code
+correct at every step:
+
+* `entitlements` IS imported at module level in `routes_monitoring.py`
+  -- unlike `routes_devices.py`, which had the real bug.
+* Every name in `quick_add_device` resolves.
+* The frontend sets `dataset.ip` before opening the dialog and reads it
+  on submit.
+* The request schema already normalises a bare address to CIDR, so a
+  device added here is stored identically to one added on the Devices
+  page.
+
+**I nearly broke it while "fixing" it.** Believing the address was not
+being normalised, I added a second `ip_address` validator. Pydantic
+runs both in sequence: mine would have produced `192.168.44.13/32` and
+the existing one would then have called `ip_address()` on that and
+raised -- turning a working path into a guaranteed 422. Caught by
+inspecting the class before trusting my own diagnosis, and reverted.
+
+Recording it because the lesson is the useful part: I went looking for
+a bug with a theory already formed, found something that matched the
+theory, and stopped checking. The existing validator's docstring said
+plainly what it did.
+
+Cosmetic cleanup: the licence-guard injection had left doubled blank
+lines between the comment and the check in three route modules. The
+logic was correct; a reader should not have to look past that to see
+it.
+
+**What is still unknown:** what actually fails for the reporter. The
+`NameError` fixed in the previous entry broke the main Devices page
+add, and that fix may resolve this too if the same session saw both.
+If not, the specific error text is needed -- the monitoring dialog
+surfaces the API's own message, including field-level validation
+errors, so it will say something more useful than "not work".
+
+---
+
+### Fixed — 500 on every device add: `NameError: name 'entitlements' is not defined`
+
+Adding a device failed with a 500 on every attempt. The traceback names
+it exactly: `routes_devices.py:181`, `entitlements` not defined.
+
+**Cause.** When the licence guard was added, the import was injected by
+a regex looking for `from ..services import`. In this file the FIRST
+such line is inside a function at line 331 -- so the import landed in a
+different function from the call at line 181. A function-local import
+is invisible to every other function.
+
+Fixed with a proper module-level import. The other three guarded paths
+were checked and were already correct.
+
+### Fixed — the undefined-name checker had a blind spot that let this through
+
+This is the part worth recording. `tests/check_undefined_names.py`
+exists precisely to catch a missing import that `py_compile` cannot
+see. It passed this file.
+
+It skipped function BODIES by design, on the reasoning that a name
+resolved at call time is less fatal than one resolved at import. That
+reasoning was wrong: a missing module-level import used inside a
+request handler is invisible until someone exercises that endpoint,
+and then it is a 500 in production -- which is exactly what happened.
+A checker that cannot catch the bug it was written for is worse than
+none, because it produces a "no problems found" line that is believed.
+
+Now checks function bodies too, reporting `name.attribute` usages where
+`name` is bound nowhere visible. Limited to module-style references on
+purpose: a bare name has too many legitimate ways to be bound for a
+static pass to judge, and this failure always looks like a module
+reference.
+
+**Two false positives found and fixed before trusting it**, both from
+scope nesting: a closure variable read from an enclosing function, and
+a parameter of a nested function reported while walking the outer one.
+Scopes are now walked as a stack, and a nested function's nodes are
+inspected only in its own pass. Clean across all 192 modules with no
+false positives.
+
+**Verified it catches the real thing**: reintroducing the exact
+production bug produces
+`routes_devices.py:181: 'entitlements.…' used inside create_device()
+but never imported or defined in that scope`, while `py_compile`
+passes the same file without complaint.
+
+152 function-local imports exist across the project -- deferred and
+heavy imports, entirely legitimate. Each is now validated as used only
+where it is visible.
+
+---
+
+### Fixed — unknown-device discovery found nothing, because the parser discarded the evidence
+
+Reported with a packet capture that settled it. A switch at
+192.168.44.13 connects to TCP 49, sends 29 bytes, and the server
+**replies with 57** -- so tac_plus-ng is processing the connection, not
+silently dropping it. It is writing something. Nothing appeared in the
+GUI.
+
+**Cause.** The discovery service read the logs through the STRUCTURED
+parsers and skipped every line they could not shape-match. A rejected
+or unrecognised client is exactly the case most likely to be logged as
+an error string rather than the usual field layout -- so the feature
+was blind to precisely the devices it existed to find. My earlier
+explanation ("tac_plus-ng may not log unknown clients at all") was a
+plausible theory that the capture disproved.
+
+**Fix.** Every log line is now also scanned for IPv4 addresses,
+regardless of whether it parses into fields. An address absent from the
+inventory is worth showing even when the surrounding text means nothing
+to this platform. The structured pass is kept for the usernames and
+per-log detail it provides.
+
+New raw-line readers (`read_access_lines`, `read_auth_lines`,
+`read_accounting_lines`, `timestamp_of`) sit alongside the structured
+ones rather than replacing them -- views that need fields still get
+fields; this one needs everything the daemon wrote.
+
+Verified against the failing case: with every structured parse
+returning nothing, two rejected clients in differently-shaped log lines
+are both found, while the server's own inventory address is correctly
+excluded.
+
+The API note was rewritten to describe what the code now does. It
+previously stated a limitation that had stopped being true, which is
+worse than no note.
+
+---
+
+### Fixed — "Could not save device." hid the real error; licence check could block device creation
+
+Reported from a real installation: adding a device manually failed with
+a generic message and no way to find out why.
+
+**Two causes, both mine.**
+
+**1. The error handler only used `detail` when it was a STRING.** A
+FastAPI validation error returns `detail` as a LIST of field errors, and
+a 500 returns none at all -- both fell through to "Could not save
+device.", hiding exactly the information needed. A new
+`describeApiError` helper renders field-level validation errors
+(`shared_secret: String should have at least 1 character`), and gives
+status-specific text for 402, 403, 409 and 500 -- including where to
+find the traceback. Verified across five response shapes.
+
+**2. The licence check could take the whole operation down with it.**
+`check_can_add_device` calls `current()`, which reads and can CREATE a
+row in `platform_license` -- a table added in a recent change. On an
+installation where that table is missing or the session is in a bad
+state, the exception propagated out of the device-creation endpoint as
+a 500. The device add failed for a reason that had nothing to do with
+the device.
+
+Both licence checks now fail **OPEN**, rolling the session back first.
+Licensing is a commercial control, not a safety one: blocking an
+administrator from adding a device because the licence BOOKKEEPING is
+broken punishes them for a fault that is not theirs. Confirmed by
+simulating a missing `platform_license` table -- the add is allowed and
+the failure is logged rather than surfaced as an inscrutable error.
+
+This is the same fail-open reasoning already applied to the ORM-level
+backstop, now applied consistently to the checks above it.
+
+---
+
+### Added — unknown-device discovery; HTTPS enabled by default
+
+**Devices seen but not added.** The Devices page now lists addresses
+that have sent AAA requests to this platform but are absent from the
+inventory, with when they were last seen, how many attempts, which
+usernames appeared and how far they got (authentication /
+authorization / accounting).
+
+Derived from real AAA log traffic rather than a scan: this is what
+actually TRIED to authenticate, which is a stronger signal than what
+answers a ping.
+
+Select one, several or all, then **Apply AAA to selected** — which
+opens the scanner's own dialog rather than a second one, so the fields,
+validation and warnings stay identical wherever AAA is pushed from.
+
+**A limitation stated in the response, not buried.** tac_plus-ng only
+logs a client it can process, so a device with no matching host block
+may never appear. This reliably finds devices removed from inventory
+and devices covered by a subnet entry that were never added
+individually. It does not promise to find every device that ever sent a
+packet — a capture on TCP 49 and UDP 1812 would, and is separate work.
+The note is returned by the API rather than written into the page,
+because it describes daemon behaviour, not GUI behaviour.
+
+Inventory entries are matched as NETWORKS, so a device covered by a
+`/24` entry is correctly not reported as unknown. A non-address in the
+`nas` field is skipped rather than offered for adoption, since adoption
+works by address and offering one would be a dead end.
+
+**HTTPS is now on by default.** A management interface for an AAA and
+security platform carries administrator credentials and device
+secrets; shipping plain HTTP as the default made the insecure choice
+the one that happens when nobody decides anything.
+
+**A missing certificate no longer prevents startup — but only when
+HTTPS is the DEFAULT.** An administrator who explicitly enabled it
+still gets a hard failure, because silently downgrading them to
+plaintext hands them the opposite of what they asked for. A default
+that refused to start would mean a fresh or restored installation never
+comes up at all, which fails the operator far worse than serving HTTP
+with a loud warning.
+
+**Certificates now identify the product and its author** — organisation
+`NetOpsGuard`, unit `Network Operations & Security Platform`, and
+`Jafar Tavana`. A self-signed certificate always warns; what it can do
+is make the details behind that warning say what this is, rather than
+showing an anonymous placeholder that looks like an interception
+attempt.
+
+The installer previously overrode the organisation with the platform's
+former name. It now uses the shared defaults, so the product identity
+is defined in one place.
+
+**Two bugs caught before shipping**: the endpoint was written against
+`devices:read`, which does not exist (`devices:view` does) — every
+request would have been denied; and `run.py` called
+`platform_settings.explicitly_set` while importing only
+`load_settings`, which would have raised `NameError` on any start with
+a missing certificate. A sweep confirmed no other API module references
+an unknown permission key.
+
+---
+
+### Changed — repository renamed to `netopsguard`
+
+README clone URL updated to
+`https://github.com/jafartavana01/netopsguard.git`.
+
+**The installer's `UPSTREAM_REPO_URL` was deliberately NOT changed.**
+It points at a DIFFERENT repository -- the fork of
+`event-driven-servers` that the installer clones to build tac_plus-ng,
+not the platform itself. Renaming it to match would make every install
+clone the wrong source and fail. Flagged for confirmation rather than
+guessed at.
+
+### Added — tac_plus-ng configuration integrity monitoring
+
+Detects edits made to the generated configuration outside this
+platform.
+
+A hand edit is not just untidy: it silently diverges the running AAA
+policy from what the GUI, the audit trail and every operator believes
+is in force -- and the next Apply overwrites it without warning. Either
+half is bad; together they are how an unexplained authorization outage
+happens.
+
+**How**: every Apply records the SHA-256 of exactly what was written,
+with who applied it and when. A check re-hashes and compares, reporting
+four states: `ok`, `modified`, `missing`, and `unknown` (nothing
+applied yet -- not a fault, and distinguished from one).
+
+**The baseline is taken from the content the platform intended to
+write, not by re-reading the file.** Re-reading would trust whatever is
+on disk at that instant, which is precisely what the check exists to
+question.
+
+**Stopping the daemon on tamper is opt-in and OFF by default**, and
+that default is a judgement rather than an oversight. Stopping
+tac_plus-ng means every device loses AAA; on a network that fails
+closed, the safety mechanism causes a worse outage than the thing it
+detected. Alerting loudly while continuing to serve is the safer
+default, and an operator who would rather fail closed can say so.
+
+**An alert is raised once, not on every poll** -- `newly_detected`
+marks only the transition, so a persistent problem does not become a
+stream of identical alarms that get filtered out.
+
+**A failure to record the baseline never fails the Apply.** The config
+is already written and the daemon is about to load it; refusing the
+whole operation because a hash could not be stored would turn a
+monitoring problem into an outage.
+
+**What this is not**: it detects and reports tampering, it does not
+prevent it. Anything running as root can edit the file, stop the
+checker, or rewrite the stored hash. The honest claim is "you will
+know", not "it cannot happen".
+
+Verified across all seven state transitions including a whitespace-only
+edit, re-apply clearing the alert, and the alert not re-firing on a
+second check.
+
+**A bug caught by checking rather than assuming**: the recording call
+was written with `applied_by=applied_by`, but the enclosing function's
+parameter is `admin_username`. It would have raised `NameError` on the
+first Apply.
+
+---
+
 ### Added — licence requests from the GUI; interactive issuing
 
 **Generate Request button** on System → License. Asks for an email and

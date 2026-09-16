@@ -89,6 +89,19 @@
     <div id="scan-results-table"></div>
   </div>
 
+  <div class="content-head" style="margin-top:24px;"><h2>Seen but not added</h2>
+    <p class="content-sub">Addresses that have sent AAA requests to this platform but are not in the device list. Select the ones you want and apply the AAA configuration — the same dialog the scanner uses.</p>
+  </div>
+  <div class="toolbar">
+    <span class="content-sub" id="unknown-count"></span>
+    <div style="display:flex;gap:8px;">
+      <button type="button" class="btn-ghost btn-small" id="unknown-refresh-btn" style="width:auto;">Refresh</button>
+      <button type="button" class="btn-primary btn-small" id="unknown-apply-btn" style="width:auto;" disabled>Apply AAA to selected</button>
+    </div>
+  </div>
+  <div id="unknown-wrap"><div class="empty-state">Loading…</div></div>
+  <p class="content-sub" id="unknown-note" style="margin-top:8px;"></p>
+
   <button type="button" class="btn-ghost btn-small" id="aaa-template-toggle" style="width:auto;margin-top:14px;">▸ Default AAA command template</button>
   <div id="aaa-template-section" hidden style="margin-top:10px;">
     <p class="content-sub" style="margin-top:0;">Used whenever "Edit commands before applying" isn't opened for a specific Apply. Changes here apply to every future scan/apply, not just the next one.</p>
@@ -716,7 +729,7 @@
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      errorBox.textContent = (body.detail && typeof body.detail === 'string') ? body.detail : 'Could not save device.';
+      errorBox.textContent = describeApiError(res, body, 'Could not save device.');
       errorBox.hidden = false;
       return;
     }
@@ -724,6 +737,7 @@
     closeModal();
     AAAPlatform.toast(id ? 'Device updated.' : 'Device added.');
     loadDevices();
+    loadUnknown();
   });
 
   async function deleteDevice(id) {
@@ -1089,6 +1103,116 @@
       const data = await res.json();
       document.getElementById('scan-apply-commands-editor').value = data.commands.join('\n');
     }
+  }
+
+  // ---- devices seen in the logs but absent from inventory ----
+  let unknownDevices = [];
+
+  function selectedUnknown() {
+    return [...document.querySelectorAll('.unknown-check:checked')].map((c) => c.dataset.ip);
+  }
+
+  function syncUnknownButton() {
+    const n = selectedUnknown().length;
+    const btn = document.getElementById('unknown-apply-btn');
+    btn.disabled = n === 0;
+    btn.textContent = n ? `Apply AAA to ${n} selected` : 'Apply AAA to selected';
+  }
+
+  function renderUnknown() {
+    const wrap = document.getElementById('unknown-wrap');
+    document.getElementById('unknown-count').textContent =
+      unknownDevices.length ? `${unknownDevices.length} address(es)` : '';
+
+    if (!unknownDevices.length) {
+      wrap.innerHTML = '<div class="empty-state"><div class="empty-state-title">Nothing unrecognised</div>' +
+        '<p class="empty-state-desc">Every address that has contacted this platform is already in the device list.</p></div>';
+      syncUnknownButton();
+      return;
+    }
+
+    wrap.innerHTML =
+      '<table class="data-table"><thead><tr>' +
+      '<th style="width:34px;"><input type="checkbox" id="unknown-select-all" aria-label="Select all"></th>' +
+      '<th>IP Address</th><th>Last seen</th><th>Attempts</th><th>Users seen</th><th>Reached</th>' +
+      '</tr></thead><tbody>' +
+      unknownDevices.map((d) =>
+        '<tr><td><input type="checkbox" class="unknown-check" data-ip="' + escapeHtml(d.ip_address) +
+        '" aria-label="Select ' + escapeHtml(d.ip_address) + '"></td>' +
+        '<td class="cell-mono">' + escapeHtml(d.ip_address) + '</td>' +
+        '<td class="content-sub">' + (d.last_seen ? new Date(d.last_seen).toLocaleString() : '—') + '</td>' +
+        '<td class="cell-mono">' + d.attempts + '</td>' +
+        '<td class="content-sub">' + (d.users.length ? escapeHtml(d.users.join(', ')) : '—') + '</td>' +
+        '<td class="content-sub">' + escapeHtml(d.seen_in.join(', ')) + '</td></tr>').join('') +
+      '</tbody></table>';
+
+    document.getElementById('unknown-select-all').addEventListener('change', (e) => {
+      document.querySelectorAll('.unknown-check').forEach((c) => { c.checked = e.target.checked; });
+      syncUnknownButton();
+    });
+    document.querySelectorAll('.unknown-check').forEach((c) =>
+      c.addEventListener('change', syncUnknownButton));
+    syncUnknownButton();
+  }
+
+  async function loadUnknown() {
+    let res;
+    try { res = await AAAPlatform.authedFetch('/api/network-scan/unknown-devices'); }
+    catch (e) { res = null; }
+    if (!res || !res.ok) {
+      document.getElementById('unknown-wrap').innerHTML =
+        '<div class="empty-state">Could not read the AAA logs to look for unrecognised devices.</div>';
+      return;
+    }
+    const data = await res.json();
+    unknownDevices = data.devices;
+    document.getElementById('unknown-note').textContent = data.note;
+    renderUnknown();
+  }
+
+  document.getElementById('unknown-refresh-btn').addEventListener('click', loadUnknown);
+  document.getElementById('unknown-apply-btn').addEventListener('click', () => {
+    const targets = selectedUnknown();
+    if (!targets.length) return;
+    // Reuses the scanner's own dialog rather than a second one, so the
+    // fields, validation and warnings stay identical wherever AAA is
+    // pushed from.
+    openScanApplyModal('all', targets);
+  });
+
+  /**
+   * Turns an API failure into something an operator can act on.
+   *
+   * The previous handler only used `detail` when it was a STRING, so a
+   * Pydantic validation error -- whose `detail` is a LIST of field
+   * errors -- fell through to a generic message. That hid exactly the
+   * information needed: which field was wrong and why. A 500 hid
+   * itself the same way.
+   */
+  function describeApiError(res, body, fallback) {
+    const detail = body && body.detail;
+
+    if (typeof detail === 'string' && detail.trim()) return detail;
+
+    // FastAPI validation errors: [{loc: [...], msg: "...", type: "..."}]
+    if (Array.isArray(detail) && detail.length) {
+      return detail.map((item) => {
+        const field = Array.isArray(item.loc)
+          ? item.loc.filter((p) => p !== 'body').join('.')
+          : '';
+        const msg = item.msg || 'is invalid';
+        return field ? `${field}: ${msg}` : msg;
+      }).join('; ');
+    }
+
+    if (res.status === 402) return 'Licence limit reached. See System \u2192 License.';
+    if (res.status === 403) return "Your role doesn't have permission to do that.";
+    if (res.status === 409) return 'That name or address is already in use.';
+    if (res.status === 500) {
+      return 'The server hit an unexpected error. Check the application log ' +
+             '(/var/log/aaa-platform/application.log) for the traceback.';
+    }
+    return `${fallback} (HTTP ${res.status})`;
   }
 
   async function openScanApplyModal(mode, targets) {

@@ -27,7 +27,7 @@ from ..models.admin import AdminUser
 from ..models.group import TacacsGroup
 from ..models.user import TacacsUser
 from ..schemas.user import TacacsUserCreate, TacacsUserOut, TacacsUserUpdate
-from .deps import get_current_admin, verify_csrf
+from .deps import require_permission, get_current_admin, verify_csrf
 
 router = APIRouter(prefix="/api/tacacs-users", tags=["tacacs-users"])
 
@@ -73,7 +73,7 @@ def _group_names(db: Session) -> dict[uuid.UUID, str]:
 @router.get("", response_model=list[TacacsUserOut])
 def list_users(
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("tacacs_users:view")),
 ):
     users = db.query(TacacsUser).order_by(TacacsUser.username.asc()).all()
     names = _group_names(db)
@@ -84,7 +84,7 @@ def list_users(
 def create_user(
     payload: TacacsUserCreate,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("tacacs_users:write")),
 ):
     group = _resolve_group(db, payload.group_id)
     user = TacacsUser(
@@ -126,7 +126,7 @@ def _get_user_or_404(db: Session, user_id: str) -> TacacsUser:
 def get_user(
     user_id: str,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("tacacs_users:view")),
 ):
     user = _get_user_or_404(db, user_id)
     names = _group_names(db)
@@ -138,7 +138,7 @@ def update_user(
     user_id: str,
     payload: TacacsUserUpdate,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("tacacs_users:write")),
 ):
     user = _get_user_or_404(db, user_id)
     group = _resolve_group(db, payload.group_id)
@@ -177,7 +177,7 @@ def update_user(
 def delete_user(
     user_id: str,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("tacacs_users:write")),
 ):
     user = _get_user_or_404(db, user_id)
     db.delete(user)

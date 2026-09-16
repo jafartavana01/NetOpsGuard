@@ -29,6 +29,7 @@ from ..database import get_db
 from ..models.admin import AdminUser
 from ..models.device import NetworkDevice
 from ..models.device_group import DeviceGroup
+from ..services import entitlements
 from ..schemas.device import (
     DeviceAaaApplyRequest,
     DeviceAaaApplyResult,
@@ -173,17 +174,11 @@ def create_device(
         )
 
     # Licence enforcement, applied at EVERY creation path -- this is
-
     # one of three, and a check in only the GUI path would leave the
-
     # other two as working bypasses.
-
     _limit = entitlements.check_can_add_device(db)
-
     if not _limit.allowed:
-
         raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, detail=_limit.reason)
-
 
     device = NetworkDevice(
         name=payload.name,
@@ -328,7 +323,7 @@ def preview_device_aaa_commands(
     to /apply-aaa is expected to still contain this exact placeholder
     string; the backend substitutes the real secret back in at that
     point (see apply_aaa_to_device below)."""
-    from ..services import entitlements, ssh_provision
+    from ..services import ssh_provision
     device = _get_device_or_404(db, device_id)
     template = _get_aaa_template_for_device(db)
     commands = ssh_provision.build_cisco_ios_aaa_commands(

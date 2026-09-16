@@ -18,7 +18,7 @@ from ..models.admin import AdminUser
 from ..models.config_version import ConfigVersion
 from ..models.system_info import InstallEvent
 from ..services import config_backup, config_compiler
-from .deps import get_current_admin, verify_csrf
+from .deps import require_permission, get_current_admin, verify_csrf
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 
@@ -60,7 +60,7 @@ def _version_out(v: ConfigVersion) -> VersionOut:
 @router.get("/candidate", response_model=CandidateOut)
 def get_candidate(
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("config:view")),
 ):
     active = config_compiler.get_active_config()
     candidate = config_compiler.compile_candidate(db)
@@ -83,7 +83,7 @@ def get_candidate(
 def apply_config(
     payload: ApplyRequest,
     db: Session = Depends(get_db),
-    admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(require_permission("config:apply")),
 ):
     candidate = config_compiler.compile_candidate(db)
     active = config_compiler.get_active_config()
@@ -123,7 +123,7 @@ def apply_config(
 @router.get("/versions", response_model=list[VersionOut])
 def list_versions(
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("config:view")),
 ):
     versions = db.query(ConfigVersion).order_by(ConfigVersion.version_number.desc()).all()
     return [_version_out(v) for v in versions]
@@ -140,7 +140,7 @@ def _get_version_or_404(db: Session, version_number: int) -> ConfigVersion:
 def get_version(
     version_number: int,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("config:view")),
 ):
     return _version_out(_get_version_or_404(db, version_number))
 
@@ -149,7 +149,7 @@ def get_version(
 def get_version_content(
     version_number: int,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("config:view")),
 ):
     """Backs the GUI's plain-text Download action (spec section 15) --
     unchanged, still exactly the raw config text this has always been.
@@ -163,7 +163,7 @@ def get_version_content(
 def export_version_backup(
     version_number: int,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("config:view")),
 ):
     """The structured, version-aware counterpart to the plain-text
     Download button -- carries a real format_version an import can
@@ -180,7 +180,7 @@ class ImportPreviewRequest(BaseModel):
 def preview_import(
     payload: ImportPreviewRequest,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("config:view")),
 ):
     """Parses an uploaded backup file (either this project's own
     structured JSON export, or the older plain-text Download format --
@@ -210,7 +210,7 @@ class ImportApplyRequest(BaseModel):
 def apply_import(
     payload: ImportApplyRequest,
     db: Session = Depends(get_db),
-    admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(require_permission("config:apply")),
 ):
     """
     Applies imported config text directly -- the same
@@ -251,7 +251,7 @@ def apply_import(
 def diff_version(
     version_number: int,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("config:view")),
 ):
     version = _get_version_or_404(db, version_number)
     active = config_compiler.get_active_config()
@@ -262,7 +262,7 @@ def diff_version(
 def restore_version(
     version_number: int,
     db: Session = Depends(get_db),
-    admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(require_permission("config:apply")),
 ):
     """
     Restoring is implemented as applying that old version's content as

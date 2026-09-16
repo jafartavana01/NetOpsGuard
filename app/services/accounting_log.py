@@ -788,3 +788,50 @@ def read_access_records(*, limit: int = 500) -> list[AccessRecord]:
     records = [_access_parse_line(line) for line in lines[-limit:] if line.strip()]
     records.reverse()
     return records
+
+
+# ---------------------------------------------------------------------
+# Raw line access
+# ---------------------------------------------------------------------
+#
+# The parsers above return structured records and silently skip a line
+# whose shape they do not recognise. That is right for the views that
+# need fields, and wrong for anything that needs to see EVERYTHING the
+# daemon wrote -- notably the search for devices that contacted the
+# platform but are not in the inventory, where an unrecognised line is
+# the most interesting kind.
+
+def _tail_lines(path, limit: int) -> list:
+    if not path.exists():
+        return []
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as handle:
+            lines = handle.readlines()
+    except OSError:
+        return []
+    return [line.rstrip("\n") for line in lines[-limit:] if line.strip()]
+
+
+def read_access_lines(*, limit: int = 2000) -> list:
+    """Raw lines from the authentication log, newest last."""
+    return _tail_lines(ACCESS_LOG_PATH, limit)
+
+
+def read_auth_lines(*, limit: int = 2000) -> list:
+    """Raw lines from the authorization log, newest last."""
+    return _tail_lines(AUTH_LOG_PATH, limit)
+
+
+def read_accounting_lines(*, limit: int = 2000) -> list:
+    """Raw lines from the accounting log, newest last."""
+    return _tail_lines(ACCOUNTING_LOG_PATH, limit)
+
+
+def timestamp_of(line: str):
+    """
+    The timestamp at the start of a log line, or None.
+
+    Works on any line regardless of what follows the timestamp, so a
+    caller scanning unrecognised lines can still order them.
+    """
+    return _try_parse_timestamp(line)

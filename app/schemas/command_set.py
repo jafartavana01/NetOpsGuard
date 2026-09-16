@@ -36,10 +36,90 @@ class CommandRuleInput(BaseModel):
     @field_validator("command_pattern")
     @classmethod
     def validate_pattern(cls, v: str) -> str:
+        """
+        A command pattern is emitted into the generated configuration
+        between slash delimiters:
+
+            if (cmd =~ /<pattern>/) { permit }
+
+        Checking only that it COMPILES is not enough, and that was the
+        previous behaviour. `x/ } permit } ` is a perfectly valid
+        regular expression, and produces:
+
+            if (cmd =~ /x/ } permit } /) { deny }
+
+        -- which closes the rule early and turns a deny into a
+        permit-everything. Anyone able to edit a command set could
+        therefore rewrite arbitrary authorization rules, which is a
+        privilege escalation, not a formatting bug.
+
+        So the pattern is constrained to characters that cannot break
+        out of the delimiter or the surrounding block. Slash is
+        rejected outright rather than escaped: there is no confirmed
+        escape syntax for it inside this config language, and guessing
+        one would be the same mistake in a new place.
+        """
+        if not v or not v.strip():
+            raise ValueError("A command pattern cannot be empty.")
+
+        # Characters that terminate the regex, the rule, or the line.
+        #
+        # `/` is included and that has a real cost: matching an
+        # interface name like GigabitEthernet0/1 is a normal thing to
+        # want. It is still rejected, because the alternative is to
+        # emit it escaped as `\/` and no confirmed evidence exists that
+        # this config language accepts that inside `/.../`. Guessing at
+        # escape syntax is precisely the mistake this fix exists to
+        # correct, and getting it wrong would break every command
+        # authorization rather than one pattern.
+        #
+        # `.` matches any character including `/`, so the rule remains
+        # expressible -- the error message says so rather than leaving
+        # the operator to work it out.
+        # Backslash is deliberately NOT here: `\s`, `\d` and `\.` are
+        # necessary regex constructs. Only a TRAILING backslash is
+        # dangerous, because it escapes the closing delimiter; that is
+        # checked separately below.
+        forbidden = set('/{}\n\r\x00"')
+        present = sorted(c for c in set(v) if c in forbidden)
+        if present:
+            shown = ", ".join(repr(c) for c in present)
+            hint = ""
+            if "/" in present:
+                hint = (
+                    " To match a path such as GigabitEthernet0/1, use '.' which matches any "
+                    "character -- for example 'interface [A-Za-z]+[0-9]+.[0-9]+'."
+                )
+            raise ValueError(
+                f"A command pattern may not contain {shown}. These characters would end the "
+                f"pattern or the rule early in the generated configuration.{hint}"
+            )
+
+        if any(ord(c) < 0x20 or ord(c) == 0x7F for c in v):
+            raise ValueError("A command pattern may not contain control characters.")
+
+        if (len(v) - len(v.rstrip("\\"))) % 2 == 1:
+            raise ValueError(
+                "A command pattern may not end with a single backslash -- it would escape the "
+                "closing delimiter in the generated configuration."
+            )
+
         try:
             re.compile(v)
         except re.error as exc:
             raise ValueError(f"'{v}' is not a valid regular expression: {exc}")
+
+        # Nested quantifiers are the classic catastrophic-backtracking
+        # shape. This regex is evaluated by the DAEMON on every command
+        # authorization, so a pathological pattern is a denial of
+        # service against AAA itself, not merely a slow page.
+        if re.search(r"\([^)]*[+*]\)[+*]", v):
+            raise ValueError(
+                "A command pattern may not nest one repetition inside another (for example "
+                "'(a+)+'). Such patterns can take exponential time to evaluate and would "
+                "stall command authorization."
+            )
+
         return v
 
 

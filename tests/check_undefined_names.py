@@ -71,6 +71,116 @@ def _module_level_bindings(tree: ast.Module) -> set:
     return names
 
 
+def _bindings_of(node) -> set:
+    """Every name bound directly by this function: parameters, plus
+    anything assigned, imported or defined anywhere inside it."""
+    bound: set = set()
+    args = node.args
+    for arg in (
+        list(args.args) + list(args.kwonlyargs) + list(getattr(args, "posonlyargs", []))
+        + ([args.vararg] if args.vararg else [])
+        + ([args.kwarg] if args.kwarg else [])
+    ):
+        bound.add(arg.arg)
+
+    for sub in ast.walk(node):
+        if isinstance(sub, (ast.Import, ast.ImportFrom)):
+            for alias in sub.names:
+                bound.add(alias.asname or alias.name.split(".")[0])
+        elif isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            bound.add(sub.name)
+        elif isinstance(sub, ast.Name) and isinstance(sub.ctx, (ast.Store, ast.Del)):
+            bound.add(sub.id)
+        elif isinstance(sub, ast.ExceptHandler) and sub.name:
+            bound.add(sub.name)
+        elif isinstance(sub, (ast.Global, ast.Nonlocal)):
+            bound.update(sub.names)
+        elif isinstance(sub, ast.Lambda):
+            for arg in list(sub.args.args) + list(sub.args.kwonlyargs):
+                bound.add(arg.arg)
+    return bound
+
+
+def _function_scope_check(tree: ast.Module, module_bound: set) -> list:
+    """
+    Names used INSIDE a function that are bound nowhere it could see.
+
+    The original version of this checker deliberately skipped function
+    bodies, reasoning that a name resolved at call time is less fatal
+    than one resolved at import. That was wrong in practice: a missing
+    module-level import used inside a request handler is invisible
+    until someone exercises that endpoint, and then it is a 500 in
+    production. Exactly that shipped -- `entitlements` was imported
+    inside one function and used in another, and this checker passed
+    it.
+
+    **Scopes nest**, which the first attempt at this got wrong and two
+    false positives immediately exposed: a closure variable from an
+    enclosing function, and a parameter of a nested function. Each
+    function is therefore checked against its own bindings PLUS every
+    enclosing function's, walked as a stack.
+
+    Only `name.attribute` usages are reported -- a bare name has too
+    many legitimate ways to be bound for a static pass to judge, and
+    the failure this exists to catch always looks like a module
+    reference.
+    """
+    problems: list = []
+
+    def _nested_functions(node) -> list:
+        """Functions defined directly inside `node`, at any depth of
+        statement nesting but not inside a further function."""
+        found = []
+
+        def scan(parent):
+            for child in ast.iter_child_nodes(parent):
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    found.append(child)
+                elif not isinstance(child, ast.ClassDef):
+                    scan(child)
+
+        scan(node)
+        return found
+
+    def walk(node, enclosing: set) -> None:
+        visible = enclosing | _bindings_of(node) | BUILTINS
+        nested = _nested_functions(node)
+
+        # Nodes belonging to a nested function are NOT inspected here.
+        # They are checked in that function's own pass, where its
+        # parameters are in scope -- inspecting them from the outer
+        # function reports every nested parameter as undefined, which
+        # is what the first attempt did.
+        skip: set = set()
+        for inner in nested:
+            for sub in ast.walk(inner):
+                skip.add(id(sub))
+
+        for sub in ast.walk(node):
+            if id(sub) in skip:
+                continue
+            if (
+                isinstance(sub, ast.Attribute)
+                and isinstance(sub.value, ast.Name)
+                and isinstance(sub.value.ctx, ast.Load)
+                and sub.value.id not in visible
+            ):
+                problems.append((sub.value.id, getattr(sub, "lineno", 0), f"inside {node.name}()"))
+
+        for inner in nested:
+            walk(inner, visible)
+
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            walk(node, module_bound)
+        elif isinstance(node, ast.ClassDef):
+            for item in node.body:
+                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    walk(item, module_bound)
+
+    return problems
+
+
 def _module_level_used(tree: ast.Module) -> list:
     """
     Names referenced by module-level constructs that are evaluated at
@@ -124,6 +234,13 @@ def check_file(path: Path) -> list:
                 f"{path.relative_to(REPO_ROOT)}:{lineno}: '{name}' used as {context} "
                 f"but never imported or defined"
             )
+
+    module_bound = _module_level_bindings(tree)
+    for name, lineno, context in _function_scope_check(tree, module_bound):
+        problems.append(
+            f"{path.relative_to(REPO_ROOT)}:{lineno}: '{name}.…' used {context} "
+            f"but never imported or defined in that scope"
+        )
     return problems
 
 

@@ -48,6 +48,13 @@ PERMISSION_CATALOG: list[Permission] = [
     Permission("diagnostics:view", "View Diagnostics", "See service status, logs, and the configuration audit trail."),
     Permission("config:view", "View Configuration", "See the compiled candidate configuration and version history."),
     Permission("config:apply", "Apply Configuration", "Apply a new configuration to the live tac_plus-ng daemon, or restore/import one."),
+    # NOTE on admin_users:* and platform_settings:write -- these
+    # endpoints are gated SUPERADMIN-ONLY, which is stricter than the
+    # permission. Granting the permission to a role therefore does
+    # nothing. Left as-is deliberately: relaxing those endpoints to
+    # permission-based would WEAKEN them, and administrator management
+    # plus TLS/service control are reasonable superadmin territory.
+    # Recorded here so the next reader does not "fix" it by loosening.
     Permission("admin_users:view", "View Admin Users", "See other platform administrator accounts."),
     Permission("admin_users:write", "Manage Admin Users", "Create, edit, and delete platform administrator accounts and roles."),
     Permission("platform_settings:write", "Manage Platform Settings", "Change network/HTTPS settings and certificates."),
@@ -56,6 +63,8 @@ PERMISSION_CATALOG: list[Permission] = [
     Permission("network_ops:templates", "Manage Command Templates", "Create, edit, and delete reusable command templates."),
     Permission("security:view", "View Security Center", "See security audit findings, scores, compliance results, and audit history."),
     Permission("security:audit", "Run Security Audits", "Trigger a device or interface security audit (live SSH, uploaded config, or stored snapshot)."),
+    # NOTE: not currently enforced at any endpoint -- the remediation
+    # apply path does not exist yet. Granting it has no effect today.
     Permission("security:remediate", "Apply Security Remediation", "Send a security finding's recommended fix through the configuration Apply workflow."),
     # NCM (Network Configuration Management). Split finely on purpose:
     # viewing an archive, downloading raw configuration, triggering a

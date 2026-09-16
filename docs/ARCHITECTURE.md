@@ -1968,3 +1968,51 @@ default layout, parsing would need revisiting. Declaring the format
 explicitly would remove that risk, but no `authorization format`
 directive was confirmed in the upstream samples, and inventing one
 would risk a configuration the daemon rejects.
+
+
+---
+
+# Per-user lockout — what tac_plus-ng can and cannot express
+
+**tac_plus-ng rules match on GROUP membership, not on individual
+users.** `member == <group>` and `device == <name>` are confirmed
+against real configurations; a bare `user == <name>` comparison is not,
+and `_compile_condition_leaf` refuses to compile a per-user condition
+for exactly this reason.
+
+This constrains any per-user security control, including temporary
+authentication lockout.
+
+## What this means for lockout
+
+A lockout must be expressed as **group membership**, because that is
+the only matching primitive available.
+
+**Local users — achievable.** The platform owns their `user { ... }`
+block and the `member = <group>` line inside it. Moving a locked user
+into a dedicated deny group, and emitting a rule that denies that group
+on the relevant device, uses only confirmed syntax.
+
+Note the shape this forces: a deny group is per-DEVICE, so locking one
+user out of one device needs a group per device, or a rule per
+(group, device) pair. That is a real design cost, not a detail.
+
+**Directory users — NOT achievable from here.** Their group membership
+is resolved by MAVIS from Active Directory at authentication time
+(`FLAG_USE_MEMBEROF`). The platform does not own it and cannot add a
+user to a lockout group. Nothing this platform writes into
+`tac_plus-ng.conf` can change what AD reports.
+
+Enforcing lockout for directory users would require the platform to sit
+in the authentication path itself -- a MAVIS hook that consults the
+platform before returning a verdict. That is a different architecture
+with its own risk: a fault in that path affects every device login.
+
+## Consequence
+
+Per-user, per-device lockout enforced through generated configuration
+is available for local users only. For directory users, the honest
+options are detection and alerting, or the MAVIS hook.
+
+A lockout the GUI reports but the daemon does not enforce is worse than
+no lockout, because it is believed.

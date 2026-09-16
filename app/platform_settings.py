@@ -28,11 +28,39 @@ SETTINGS_PATH = CONFIG_DIR / "platform_settings.json"
 DEFAULTS = {
     "web_host": "0.0.0.0",
     "web_port": 8420,
-    "https_enabled": False,
+    # HTTPS is ON by default. A management interface for an AAA and
+    # security platform carries admin credentials and device secrets;
+    # shipping it as plain HTTP by default makes the insecure choice the
+    # one that happens when nobody decides anything.
+    #
+    # The certificate is self-signed, so a browser will warn. That is
+    # honest -- the connection IS unverified by a public CA -- and it is
+    # still better than no encryption at all. See run.py for why a
+    # missing certificate does not prevent startup.
+    "https_enabled": True,
     "tls_cert_path": "/etc/aaa-platform/tls/server.crt",
     "tls_key_path": "/etc/aaa-platform/tls/server.key",
     "tacacs_port": 49,
 }
+
+
+def explicitly_set(key: str) -> bool:
+    """
+    Whether `key` was written to the settings file, as opposed to
+    coming from DEFAULTS.
+
+    Needed because a default and a deliberate choice deserve different
+    failure behaviour: an administrator who explicitly enables HTTPS
+    should see a hard error if the certificate is missing, while a
+    default should not stop the platform from starting at all.
+    """
+    if not SETTINGS_PATH.exists():
+        return False
+    try:
+        data = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return False
+    return isinstance(data, dict) and key in data
 
 
 def load_settings() -> dict:

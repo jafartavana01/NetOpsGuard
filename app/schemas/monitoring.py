@@ -25,6 +25,7 @@ class UnrecognizedConnectionOut(BaseModel):
 
 class QuickAddDeviceRequest(BaseModel):
     ip_address: str
+
     name: str = Field(min_length=1, max_length=64)
     shared_secret: str = Field(min_length=1, max_length=256)
 

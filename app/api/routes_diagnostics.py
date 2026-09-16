@@ -19,7 +19,7 @@ from ..database import get_db
 from ..models.admin import AdminUser
 from ..models.system_info import InstallEvent
 from ..services import build_info_service, config_compiler, service_control
-from .deps import get_current_admin
+from .deps import require_permission, get_current_admin
 
 router = APIRouter(prefix="/api/diagnostics", tags=["diagnostics"])
 
@@ -29,7 +29,7 @@ _ALLOWED_UNITS = {service_control.MANAGEMENT_UNIT, service_control.TAC_PLUS_NG_U
 @router.get("/overview")
 def diagnostics_overview(
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("diagnostics:view")),
 ):
     """Server status + build information in one call -- the two spec
     section 56 items that were already fully implemented (Phase 1),
@@ -52,7 +52,7 @@ def diagnostics_overview(
 @router.get("/service-log/{unit}")
 def service_log(
     unit: str,
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("diagnostics:view")),
 ):
     if unit not in _ALLOWED_UNITS:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Unknown service unit.")
@@ -66,7 +66,7 @@ def service_log(
 def audit_events(
     limit: int = 100,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("diagnostics:view")),
 ):
     """
     The configuration-apply/validation/rollback trail this platform has
@@ -99,7 +99,7 @@ def audit_events(
 @router.post("/validate-config")
 def validate_config_now(
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("diagnostics:view")),
 ):
     """
     On-demand syntax check of what the candidate config would be RIGHT

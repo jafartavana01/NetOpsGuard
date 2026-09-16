@@ -25,7 +25,7 @@ from ..database import get_db
 from ..models.admin import AdminUser
 from ..models.device import NetworkDevice
 from ..services import accounting_log
-from .deps import get_current_admin
+from .deps import require_permission
 
 router = APIRouter(prefix="/api/tacacs-accounting", tags=["tacacs-accounting"])
 
@@ -102,7 +102,7 @@ def list_accounting_records(
     until: str | None = None,
     limit: int = Query(default=200, ge=1, le=2000),
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("accounting:view")),
 ):
     records = accounting_log.read_auth_records(limit=max(limit, 2000))
     filtered = accounting_log.filter_records(
@@ -134,7 +134,7 @@ def export_accounting_records(
     since: str | None = None,
     until: str | None = None,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("accounting:export")),
 ):
     records = accounting_log.read_records(limit=10000)
     filtered = accounting_log.filter_records(
@@ -169,7 +169,7 @@ def list_sessions(
     device: str | None = None,
     active_only: bool = False,
     limit: int = Query(default=500, ge=1, le=5000),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("accounting:view")),
 ):
     """PAM Expansion Plan §9. Reads the same log the accounting list
     view reads, then groups by (device, port) -- see
@@ -201,7 +201,7 @@ def list_sessions(
 def recent_activity(
     minutes: int = Query(default=5, ge=1, le=1440),
     limit: int = Query(default=2000, ge=1, le=10000),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("accounting:view")),
 ):
     """Dashboard's "who accessed what, just now" table -- every
     (device, user) pair with at least one accounting event in the
@@ -249,7 +249,7 @@ def recent_activity(
 def accounting_health(
     limit: int = Query(default=2000, ge=1, le=10000),
     hours: int = Query(default=24, ge=1, le=168),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("accounting:view")),
 ):
     """PAM Expansion Plan §16-17: AAA Health + Failure Analysis,
     computed server-side over the same parsed accounting records
@@ -276,7 +276,7 @@ def list_access_events(
     until: str | None = None,
     limit: int = Query(default=200, ge=1, le=2000),
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("accounting:view")),
 ):
     """
     Access decisions from the AUTHORIZATION log, filterable by user,

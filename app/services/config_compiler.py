@@ -134,6 +134,38 @@ def _quote(value: str) -> str:
     return f'"{escaped}"'
 
 
+#: Characters that would terminate a `cmd =~ /.../` rule early. Kept
+#: here as well as in app.schemas.command_set on purpose: the schema
+#: stops bad input arriving, this stops bad data being EMITTED,
+#: including rows stored before the schema was hardened.
+_UNSAFE_PATTERN_CHARS = set('/{}\n\r\x00"')
+
+
+def _command_pattern_is_safe(pattern: str | None) -> bool:
+    """
+    Whether a stored command pattern can be emitted between slash
+    delimiters without escaping its context.
+
+    Note what is NOT forbidden: a backslash. ``\\s``, ``\\d`` and ``\\.`` are
+    ordinary, necessary regex constructs, and an earlier version of
+    this guard banned them outright -- which broke a legitimate pattern
+    (``^show(\\s|$)``) that the existing authorization test relies on.
+
+    A backslash is only dangerous at the END, where it would escape the
+    closing delimiter: ``abc\\`` emits as ``/abc\\/``. So a pattern ending in
+    an ODD number of backslashes is refused, and everything else is
+    allowed.
+    """
+    if not pattern or not pattern.strip():
+        return False
+    if any(c in _UNSAFE_PATTERN_CHARS for c in pattern):
+        return False
+    if any(ord(c) < 0x20 or ord(c) == 0x7F for c in pattern):
+        return False
+    trailing = len(pattern) - len(pattern.rstrip("\\"))
+    return trailing % 2 == 0
+
+
 def _mavis_block(settings: AdSettings | None, *, radius_enabled: bool = False) -> str:
     """
     Active Directory / MAVIS integration (confirmed real syntax --
@@ -512,11 +544,23 @@ def _policy_block(policy: Policy, ordered_rules: list) -> str:
         # supplied text -- unlike identifiers, it legitimately needs
         # to contain regex metacharacters, so it's placed inside a
         # PCRE delimiter (/.../ ) rather than restricted to a safe
-        # charset. It is NOT interpolated into anything that could
-        # break out of the surrounding script block: tac_plus-ng's own
-        # regex delimiter is what bounds it, the same way _quote()
-        # bounds shared secrets with double quotes elsewhere in this
-        # file.
+        # This comment previously claimed the pattern could not break
+        # out of the surrounding block because the regex delimiter
+        # bounds it. That was WRONG, and a security audit disproved it:
+        # `x/ } permit } ` is a valid regular expression that closes the
+        # delimiter AND the rule, turning a deny into a permit-all.
+        #
+        # The input validator now rejects such patterns, but validation
+        # at the schema does not protect rows already in the database,
+        # nor any future code path that writes a rule without going
+        # through it. So the dangerous pattern is ALSO refused here, at
+        # the point where it would actually do harm.
+        if not _command_pattern_is_safe(rule.command_pattern):
+            raise UncompilablePolicyError(
+                f"Command rule pattern {rule.command_pattern!r} contains characters that would "
+                f"end the rule early in the generated configuration. Edit the command set to "
+                f"remove them before applying."
+            )
         lines.append(f"                if (cmd =~ /{rule.command_pattern}/) {{ {rule.action} }}")
     lines.append(f"                {policy.default_action}")
     lines.append("            }")
@@ -1040,9 +1084,18 @@ def compile_candidate(db: Session) -> str:
     # separately reviewable.
     radius_profiles, radius_rules = _radius_policy_blocks(db)
 
+    # Lockout rules go FIRST in the override list so they are emitted
+    # ahead of every policy: tac_plus-ng takes the first matching rule,
+    # so a deny placed after a permitting policy would never fire.
+    lockout_rules = _lockout_rule_blocks(db)
+
     ruleset_block = _ruleset_block(
         compilable_policies,
-        override_rule_texts=(override_rule_texts or []) + ([radius_rules] if radius_rules else []),
+        override_rule_texts=(
+            ([lockout_rules] if lockout_rules else [])
+            + (override_rule_texts or [])
+            + ([radius_rules] if radius_rules else [])
+        ),
     )
     mavis_block = _mavis_block(db.query(AdSettings).first(), radius_enabled=_radius_on)
 
@@ -1223,6 +1276,27 @@ def apply_candidate(
     GENERATED_DIR.mkdir(parents=True, exist_ok=True)
     ACTIVE_CONFIG_PATH.write_text(candidate_text, encoding="utf-8")
 
+    # Record the integrity baseline from the text we INTENDED to write,
+    # not by re-reading the file. Re-reading would trust whatever is on
+    # disk at this instant, which is exactly what the check exists to
+    # question.
+    #
+    # A failure here must not fail the apply: the configuration is
+    # already written and the daemon is about to load it, so refusing
+    # the whole operation because a hash could not be stored would turn
+    # a monitoring problem into an outage.
+    try:
+        from . import config_integrity
+
+        config_integrity.record_applied(
+            db, config_path=ACTIVE_CONFIG_PATH, content=candidate_text,
+            applied_by=admin_username,
+        )
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception(
+            "Could not record the configuration integrity baseline.")
+
     try:
         service_control.reload(service_control.TAC_PLUS_NG_UNIT)
     except service_control.ServiceControlError:
@@ -1392,3 +1466,33 @@ def _radius_policy_blocks(db) -> tuple[str, str]:
         rules.append("\n".join(rule) + "\n")
 
     return "".join(profiles), "".join(rules)
+
+
+def _lockout_rule_blocks(db) -> str:
+    """
+    Deny rules for active authentication lockouts.
+
+    **Currently emits nothing, on purpose.**
+
+    The first implementation emitted `user == "name" && device == R1`.
+    That is not valid here: `_compile_condition_leaf` in this same file
+    documents, and enforces, that direct per-user matching has no
+    confirmed tac_plus-ng syntax and that every confirmed example
+    matches via `member == <group>`. I wrote the rule without reading
+    the decision recorded a few hundred lines above it.
+
+    Emitting it would have been caught by `tac_plus-ng -P` before
+    anything was installed, so it could not have broken a running
+    service -- but it would have meant a lockout that silently never
+    applied, while the GUI showed the user as locked. A safety control
+    that reports protection it is not providing is worse than no
+    control.
+
+    What a working implementation needs instead: membership of a
+    dedicated deny GROUP, since `member ==` is confirmed. That is
+    achievable for LOCAL users, whose group membership this platform
+    owns. It is NOT achievable for directory users, whose membership
+    comes from Active Directory via MAVIS and cannot be changed from
+    here. See docs/ARCHITECTURE.md.
+    """
+    return ""

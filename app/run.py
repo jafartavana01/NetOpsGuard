@@ -25,7 +25,7 @@ import sys
 
 import uvicorn
 
-from .platform_settings import load_settings
+from .platform_settings import explicitly_set, load_settings
 
 
 def main() -> None:
@@ -42,17 +42,39 @@ def main() -> None:
         cert_path = Path(settings["tls_cert_path"])
         key_path = Path(settings["tls_key_path"])
         if not cert_path.exists() or not key_path.exists():
+            # An EXPLICIT choice and a DEFAULT deserve different
+            # handling. An administrator who deliberately turned HTTPS
+            # on must not be silently downgraded to plaintext -- that
+            # would hand them the opposite of what they asked for.
+            #
+            # But HTTPS is now on by DEFAULT, and refusing to start
+            # because a certificate has not been generated yet would
+            # mean a fresh or restored installation never comes up at
+            # all. That fails the operator far worse than serving HTTP
+            # with a loud warning until they generate one.
+            if explicitly_set("https_enabled"):
+                print(
+                    f"https_enabled is true, but {cert_path} and/or {key_path} "
+                    "do not exist. Refusing to start rather than silently fall "
+                    "back to plaintext HTTP. Generate or restore a certificate "
+                    "first (Platform Settings -> HTTPS in the GUI, or re-run "
+                    "installer/tls_setup.py).",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
             print(
-                f"https_enabled is true, but {cert_path} and/or {key_path} "
-                "do not exist. Refusing to start rather than silently fall "
-                "back to plaintext HTTP. Generate or restore a certificate "
-                "first (Platform Settings -> HTTPS in the GUI, or re-run "
-                "installer/tls_setup.py).",
+                "WARNING: HTTPS is enabled by default, but no certificate was "
+                f"found at {cert_path}. Starting on plain HTTP so the platform "
+                "is reachable. Generate a certificate under Platform Settings "
+                "-> HTTPS, or run installer/tls_setup.py, then restart. Until "
+                "then, administrator passwords and device secrets travel "
+                "unencrypted.",
                 file=sys.stderr,
             )
-            sys.exit(1)
-        kwargs["ssl_certfile"] = str(cert_path)
-        kwargs["ssl_keyfile"] = str(key_path)
+        else:
+            kwargs["ssl_certfile"] = str(cert_path)
+            kwargs["ssl_keyfile"] = str(key_path)
 
     uvicorn.run("app.main:app", **kwargs)
 

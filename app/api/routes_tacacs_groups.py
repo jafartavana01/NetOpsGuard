@@ -30,7 +30,7 @@ from ..models.policy_condition import PolicyCondition
 from ..models.policy_condition_group import PolicyConditionGroup
 from ..models.user import TacacsUser
 from ..schemas.group import TacacsGroupCreate, TacacsGroupOut, TacacsGroupUpdate
-from .deps import get_current_admin, verify_csrf
+from .deps import require_permission, get_current_admin, verify_csrf
 
 router = APIRouter(prefix="/api/tacacs-groups", tags=["tacacs-groups"])
 
@@ -104,7 +104,7 @@ def _to_out(group: TacacsGroup, member_count: int = 0, policy_names: list[str] |
 @router.get("", response_model=list[TacacsGroupOut])
 def list_groups(
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("groups:view")),
 ):
     groups = db.query(TacacsGroup).order_by(TacacsGroup.name.asc()).all()
     counts = _member_counts(db)
@@ -116,7 +116,7 @@ def list_groups(
 def create_group(
     payload: TacacsGroupCreate,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("groups:write")),
 ):
     group = TacacsGroup(name=payload.name, description=payload.description, ad_group_name=payload.ad_group_name)
     db.add(group)
@@ -144,7 +144,7 @@ def _get_group_or_404(db: Session, group_id: str) -> TacacsGroup:
 def get_group(
     group_id: str,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("groups:view")),
 ):
     group = _get_group_or_404(db, group_id)
     count = db.query(func.count(TacacsUser.id)).filter(TacacsUser.group_id == group.id).scalar()
@@ -157,7 +157,7 @@ def update_group(
     group_id: str,
     payload: TacacsGroupUpdate,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("groups:write")),
 ):
     group = _get_group_or_404(db, group_id)
     group.name = payload.name
@@ -178,7 +178,7 @@ def update_group(
 def delete_group(
     group_id: str,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("groups:write")),
 ):
     group = _get_group_or_404(db, group_id)
     db.delete(group)
@@ -189,7 +189,7 @@ def delete_group(
 def list_members(
     group_id: str,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("groups:view")),
 ):
     """The other half of the member_count already shown on every
     group -- this was previously the one thing you couldn't see or
@@ -209,7 +209,7 @@ def add_member(
     group_id: str,
     payload: AddMemberRequest,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("groups:write")),
 ):
     """Adding a member here is the same underlying change as editing
     that user's own Group field -- TacacsUser.group_id is still a
@@ -241,7 +241,7 @@ def remove_member(
     group_id: str,
     user_id: str,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("groups:write")),
 ):
     """Ungroups the user -- does not delete their account, matching
     how deleting the whole group itself already behaves (SET NULL,

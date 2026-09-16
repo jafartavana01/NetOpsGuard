@@ -40,6 +40,16 @@ class CertificateError(ValueError):
     pass
 
 
+#: Identity written into a generated certificate when the caller does
+#: not supply one. A self-signed certificate always produces a browser
+#: warning; what it can do is make the details behind that warning say
+#: what this is and who made it, rather than showing an anonymous
+#: placeholder that looks like an interception attempt.
+DEFAULT_ORGANIZATION = "NetOpsGuard"
+DEFAULT_ORGANIZATIONAL_UNIT = "Network Operations & Security Platform"
+DEFAULT_ISSUER_NAME = "Jafar Tavana"
+
+
 def generate_self_signed(
     *,
     common_name: str,
@@ -64,10 +74,18 @@ def generate_self_signed(
     key = rsa.generate_private_key(public_exponent=65537, key_size=key_size)
 
     name_attributes = [x509.NameAttribute(NameOID.COMMON_NAME, common_name.strip())]
-    if organization:
-        name_attributes.append(x509.NameAttribute(NameOID.ORGANIZATION_NAME, organization.strip()))
-    if organizational_unit:
-        name_attributes.append(x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, organizational_unit.strip()))
+    # Fall back to the product identity rather than leaving these
+    # blank. An operator inspecting the certificate warning should be
+    # able to tell it is this platform's own certificate.
+    org = (organization or DEFAULT_ORGANIZATION).strip()
+    unit = (organizational_unit or DEFAULT_ORGANIZATIONAL_UNIT).strip()
+    if org:
+        name_attributes.append(x509.NameAttribute(NameOID.ORGANIZATION_NAME, org))
+    if unit:
+        name_attributes.append(x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, unit))
+    name_attributes.append(
+        x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, DEFAULT_ISSUER_NAME)
+    )
     subject = issuer = x509.Name(name_attributes)
 
     san_entries: list[x509.GeneralName] = []

@@ -106,17 +106,11 @@ def quick_add_device(
     monitor_group = db.query(DeviceGroup).filter(DeviceGroup.name == MONITOR_GROUP_NAME).first()
 
     # Licence enforcement, applied at EVERY creation path -- this is
-
     # one of three, and a check in only the GUI path would leave the
-
     # other two as working bypasses.
-
     _limit = entitlements.check_can_add_device(db)
-
     if not _limit.allowed:
-
         raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, detail=_limit.reason)
-
 
     device = NetworkDevice(
         name=payload.name,

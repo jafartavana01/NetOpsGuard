@@ -25,7 +25,7 @@ from ..models.device import NetworkDevice
 from ..models.user import TacacsUser
 from ..services import identity_resolver
 from ..services import policy_engine
-from .deps import get_current_admin
+from .deps import require_permission
 
 router = APIRouter(prefix="/api/effective-access", tags=["effective-access"])
 
@@ -46,7 +46,7 @@ def _result_summary(db: Session, result: policy_engine.EvaluationResult) -> dict
 def effective_access_for_user(
     user_id: str,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("policies:view")),
 ):
     """"What can user X access?" -- every device this user can reach,
     grouped by the privilege level each grants."""
@@ -84,7 +84,7 @@ def effective_access_for_user(
 def effective_access_for_device(
     device_id: str,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("policies:view")),
 ):
     """"Who can access device X?" -- every user who can reach this
     device, and at what privilege."""
@@ -123,7 +123,7 @@ def why_can_access(
     user_id: str,
     device_id: str,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("policies:view")),
 ):
     """"Why can this user access this device?" -- the single
     evaluation with its full trace, the same explanatory mechanism the
@@ -155,7 +155,7 @@ def effective_access_by_username(
     db: Session = Depends(get_db),
     # Same gate as the other endpoints in this module -- this is the
     # username-keyed form of the same question, not a new capability.
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("policies:view")),
 ):
     """
     "What can this username access?" -- accepting a NAME rather than a

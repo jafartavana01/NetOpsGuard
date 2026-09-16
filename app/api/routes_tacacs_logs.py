@@ -31,7 +31,8 @@ from fastapi import APIRouter, Depends
 
 from ..config import LOG_DIR
 from ..models.admin import AdminUser
-from .deps import get_current_admin
+from ..services import accounting_log
+from .deps import require_permission
 
 router = APIRouter(prefix="/api/tacacs-logs", tags=["tacacs-logs"])
 
@@ -58,6 +59,21 @@ def _tail_log(path: Path, *, lines: int, search: str | None) -> dict:
         all_lines = [line for line in all_lines if needle in line.lower()]
 
     tail = all_lines[-lines:]
+
+    # Credentials are masked before the text leaves the server.
+    #
+    # The authorization log records each command exactly as the
+    # operator typed it, so a line like
+    # `username admin password s3cret` sits in it in CLEARTEXT --
+    # confirmed on a real deployment, where the accounting log masked
+    # the same command and this one did not.
+    #
+    # The parsed accounting API already masks. This endpoint serves the
+    # RAW file and bypassed that entirely, which made it the easiest
+    # place in the product to read a device password. The same masking
+    # is applied here.
+    tail = [accounting_log.mask_credentials(line) for line in tail]
+
     note = None
     if search and not tail:
         note = f"No lines matched '{search}'."
@@ -68,7 +84,7 @@ def _tail_log(path: Path, *, lines: int, search: str | None) -> dict:
 def tail_access_log(
     lines: int = 100,
     search: str | None = None,
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("diagnostics:view")),
 ):
     return _tail_log(ACCESS_LOG_PATH, lines=lines, search=search)
 
@@ -77,6 +93,6 @@ def tail_access_log(
 def tail_authorization_log(
     lines: int = 100,
     search: str | None = None,
-    _admin: AdminUser = Depends(get_current_admin),
+    _admin: AdminUser = Depends(require_permission("diagnostics:view")),
 ):
     return _tail_log(AUTHORIZATION_LOG_PATH, lines=lines, search=search)

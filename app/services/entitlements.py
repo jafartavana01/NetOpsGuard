@@ -27,6 +27,8 @@ page states this rather than leaving the operator to infer it.
 """
 from __future__ import annotations
 
+import logging
+
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -35,6 +37,8 @@ from sqlalchemy.orm import Session
 from ..models.device import NetworkDevice
 from ..models.license import PlatformLicense
 from . import editions, license_verify, machine_fingerprint
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -206,8 +210,30 @@ class LimitCheck:
 
 
 def check_can_add_device(db: Session, *, adding: int = 1) -> LimitCheck:
-    ent = current(db)
-    count = device_count(db)
+    """
+    Whether another device may be added.
+
+    Fails OPEN on any infrastructure error -- a missing licence table
+    on a part-migrated install, a rolled-back transaction, anything
+    unexpected. Licensing is a commercial control, not a safety one:
+    blocking an administrator from adding a device because the LICENCE
+    bookkeeping is broken punishes them for a fault that is not theirs
+    and has nothing to do with what they are trying to do.
+
+    This was not theoretical. The first version let such an error
+    propagate, which surfaced in the GUI as "Could not save device."
+    with no indication that licensing was involved at all.
+    """
+    try:
+        ent = current(db)
+        count = device_count(db)
+    except Exception:
+        logger.exception("Licence check failed; allowing the device to be added.")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return LimitCheck(allowed=True, reason="", current=0, limit=None)
 
     if ent.device_limit is None:
         return LimitCheck(allowed=True, current=count, limit=None)
@@ -248,8 +274,17 @@ def admin_count(db: Session) -> int:
 
 
 def check_can_add_admin(db: Session) -> LimitCheck:
-    ent = current(db)
-    count = admin_count(db)
+    # Fails open for the same reason as check_can_add_device above.
+    try:
+        ent = current(db)
+        count = admin_count(db)
+    except Exception:
+        logger.exception("Licence check failed; allowing the administrator to be added.")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return LimitCheck(allowed=True, reason="", current=0, limit=None)
     if ent.admin_limit is None:
         return LimitCheck(allowed=True, current=count, limit=None)
     if count + 1 <= ent.admin_limit:

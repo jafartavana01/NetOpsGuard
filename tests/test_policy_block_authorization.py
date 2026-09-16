@@ -50,7 +50,20 @@ def _load_policy_block():
     )
     mod = types.ModuleType("_pb")
     sys.modules["_pb"] = mod
-    exec(compile("from __future__ import annotations\nclass Policy: pass\n" + fn, "_pb", "exec"), mod.__dict__)
+    # `_policy_block` now calls the emission-side safety guard added
+    # after a security audit found that a command pattern could escape
+    # its `/.../` delimiter. Pull that in too, rather than stubbing it:
+    # a stub would let this test keep passing if the guard were
+    # removed, which is the opposite of what it is for.
+    helpers = [
+        ast.get_source_segment(src, n)
+        for n in ast.parse(src).body
+        if (isinstance(n, ast.FunctionDef) and n.name == "_command_pattern_is_safe")
+        or (isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "_UNSAFE_PATTERN_CHARS")
+        or (isinstance(n, ast.ClassDef) and n.name == "UncompilablePolicyError")
+    ]
+    preamble = "from __future__ import annotations\nclass Policy: pass\n" + "\n".join(helpers) + "\n"
+    exec(compile(preamble + fn, "_pb", "exec"), mod.__dict__)
     return mod._policy_block
 
 

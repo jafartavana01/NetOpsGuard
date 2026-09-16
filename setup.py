@@ -240,16 +240,18 @@ def phase_tls_and_settings() -> None:
         utils.info("Existing TLS certificate found -- leaving it in place.")
     else:
         hostname = socket.gethostname()
-        cert_pem, key_pem = tls_certs.generate_self_signed(
-            common_name=hostname,
-            organization="AAA Management Platform",
-        )
+        # Organisation and unit come from tls_certs' own defaults, so the
+        # product identity is defined in ONE place rather than being
+        # restated here and drifting -- this call previously carried the
+        # platform's former name.
+        cert_pem, key_pem = tls_certs.generate_self_signed(common_name=hostname)
         tls_certs.write_active_certificate(cert_pem, key_pem, uid=uid, gid=gid)
         utils.ok(f"Generated default self-signed certificate (CN={hostname}).")
         utils.info(
-            "HTTPS is generated but NOT enabled by default -- turn it on under "
-            "Platform Settings once you've confirmed the GUI is reachable over "
-            "plain HTTP first."
+            "HTTPS is enabled by default using this certificate. It is self-signed, "
+            "so your browser will warn on first visit -- the connection is encrypted, "
+            "but not vouched for by a public CA. Replace it with your own certificate "
+            "under Platform Settings -> HTTPS when you have one."
         )
 
     if not platform_settings.SETTINGS_PATH.exists():
@@ -309,7 +311,8 @@ def phase_systemd(binary_path: str) -> None:
 
 def print_summary(build_info: dict) -> None:
     utils.header("Installation Summary")
-    utils.ok("Management GUI:  http://<server-ip>:8420  (plain HTTP by default -- listens on all interfaces)")
+    utils.ok("Management GUI:  https://<server-ip>:8420  (HTTPS by default -- listens on all interfaces)")
+    utils.info("  The certificate is self-signed, so your browser will warn on first visit.")
     utils.info("Port, bind address, and HTTPS (self-signed cert already generated, "
                "not yet enabled) are all configurable after login under Platform -> Settings.")
     utils.ok(f"tac_plus-ng     : {build_info.get('tac_plus_ng_version_string', 'unknown')}")

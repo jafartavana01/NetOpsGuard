@@ -24,6 +24,9 @@ from __future__ import annotations
 import secrets
 import uuid
 
+from datetime import datetime
+
+from pydantic import BaseModel
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -211,17 +214,11 @@ def _apply_one(
         description = f"Discovered via Network Scan & Provision.\n\n{info.raw_version_output}"
 
     # Licence enforcement, applied at EVERY creation path -- this is
-
     # one of three, and a check in only the GUI path would leave the
-
     # other two as working bypasses.
-
     _limit = entitlements.check_can_add_device(db)
-
     if not _limit.allowed:
-
         raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, detail=_limit.reason)
-
 
     device = NetworkDevice(
         name=name,
@@ -371,3 +368,58 @@ def get_apply_progress(
     if session is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Unknown or expired progress session.")
     return session
+
+
+class UnknownDeviceOut(BaseModel):
+    ip_address: str
+    first_seen: datetime | None
+    last_seen: datetime | None
+    attempts: int
+    users: list[str]
+    seen_in: list[str]
+
+
+class UnknownDevicesOut(BaseModel):
+    devices: list[UnknownDeviceOut]
+    note: str
+
+
+@router.get("/unknown-devices", response_model=UnknownDevicesOut)
+def list_unknown_devices(
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(require_permission("devices:view")),
+):
+    """
+    Addresses that have contacted this platform but are not in the
+    inventory.
+
+    Derived from real AAA traffic rather than a scan: this is what
+    actually tried to authenticate, which is a stronger signal than
+    what happens to answer a ping.
+
+    The `note` is returned rather than written into the page, because
+    the limitation it describes is a property of how tac_plus-ng logs,
+    not of the GUI -- if that changes, this text should change with the
+    backend that knows about it.
+    """
+    from ..services import unknown_devices
+
+    found = unknown_devices.find_unknown(db)
+    return UnknownDevicesOut(
+        devices=[
+            UnknownDeviceOut(
+                ip_address=d.ip_address, first_seen=d.first_seen, last_seen=d.last_seen,
+                attempts=d.attempts, users=d.users, seen_in=d.seen_in,
+            )
+            for d in found
+        ],
+        note=(
+            "Found by scanning the AAA logs for addresses that are not in the device list. "
+            "Every log line is scanned, including ones this platform cannot parse into "
+            "fields -- a rejected or unrecognised client is often logged in a different "
+            "shape, and that is exactly the case worth catching. If a device is missing "
+            "here, confirm its requests are reaching the server "
+            "(tcpdump -ni any tcp port 49) and that tac_plus-ng is writing to "
+            "/var/log/aaa-platform/."
+        ),
+    )
