@@ -30,6 +30,8 @@ already established.
 """
 from __future__ import annotations
 
+from . import ssh_host_keys
+
 import re
 import time
 from dataclasses import dataclass, field
@@ -292,6 +294,10 @@ def run_commands_on_device(
     host: str, username: str, password: str, commands: list[str],
     *, port: int = 22, connect_timeout_seconds: int = _CONNECT_TIMEOUT_SECONDS_DEFAULT,
     command_timeout_seconds: int = _COMMAND_TIMEOUT_SECONDS_DEFAULT,
+    # Host-key pinning. Defaulted so every existing caller keeps
+    # working and simply learns the key on first connect.
+    expected_host_key: str | None = None,
+    on_host_key_learned=None,
 ) -> DeviceExecutionResult:
     """
     Connects once, runs every command in `commands` in order over an
@@ -312,7 +318,13 @@ def run_commands_on_device(
     import paramiko
 
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.set_missing_host_key_policy(
+        ssh_host_keys.PinnedHostKeyPolicy(
+            expected=expected_host_key,
+            on_learn=on_host_key_learned,
+            device_label=host,
+        )
+    )
     results: list[CommandResult] = []
     try:
         client.connect(

@@ -187,10 +187,28 @@ def write_active_certificate(cert_pem: bytes, key_pem: bytes, *, uid: int, gid: 
     TLS_DIR.mkdir(parents=True, exist_ok=True)
 
     CERT_PATH.write_bytes(cert_pem)
-    KEY_PATH.write_bytes(key_pem)
+
+    # The private key is created with its restrictive mode ALREADY set,
+    # rather than written and then chmod-ed.
+    #
+    # `write_bytes` creates a new file with the process umask -- 0644 on
+    # a default Ubuntu -- so a write-then-chmod leaves a window in which
+    # the TLS private key is world-readable. The window is short and the
+    # fix is free, which makes it worth closing: os.open with a mode
+    # argument applies the permissions at creation.
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    fd = os.open(KEY_PATH, flags, 0o600)
+    try:
+        os.write(fd, key_pem)
+    finally:
+        os.close(fd)
+
     os.chown(CERT_PATH, uid, gid)
     os.chown(KEY_PATH, uid, gid)
     CERT_PATH.chmod(0o644)
+    # Re-asserted because os.open honours the umask on the mode it is
+    # given: a umask of 0077 would already be stricter, but a umask
+    # that clears group bits differently must not leave this looser.
     KEY_PATH.chmod(0o600)
 
 

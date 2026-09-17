@@ -75,9 +75,17 @@
 {% block view_scripts %}
 <script>
   function escapeHtml(s) {
-    const div = document.createElement('div');
-    div.textContent = s ?? '';
-    return div.innerHTML;
+    // Escapes quotes as well as angle brackets, so the result is safe
+    // inside an HTML ATTRIBUTE and not only in text position. The
+    // previous textContent/innerHTML round-trip left quotes intact,
+    // which let a value like `" onerror="alert(1)` close an attribute
+    // and add a new one.
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   let templates = [];

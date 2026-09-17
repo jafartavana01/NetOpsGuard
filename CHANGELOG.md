@@ -27,6 +27,262 @@ and every RADIUS nav entry is confirmed to resolve to a registered
 route. A "the regex ran without error" result is not evidence the edit
 happened.
 
+### Security — systemd hardening, sudo review, dependency floors (audit complete)
+
+**sudo -- already correct, and worth saying so.** The sudoers file
+grants the service account exact, non-wildcard commands against only
+its own two systemd units: six verbs plus one `show` and one
+`journalctl`, each a literal string match. No `ALL`, no wildcards, no
+shell. That is the shape this should have, and it needed no change.
+
+**systemd -- eight hardening directives added to both units.**
+`ProtectKernelTunables`, `ProtectKernelModules`, `ProtectControlGroups`,
+`RestrictSUIDSGID`, `RestrictNamespaces`, `LockPersonality`,
+`PrivateDevices`, and `UMask=0027`. `ProtectHome` was also missing from
+the tac_plus-ng unit.
+
+`UMask=0027` is the one tied directly to an earlier finding: the
+generated configuration was being written world-readable with every
+device's shared secret in it. The application now chmods those files,
+and this makes the same mistake impossible at the OS level for any file
+either service creates -- including files written by code nobody has
+added yet.
+
+Checked before adding it: both units run as the same user and group, so
+a 0640 configuration is still readable by the daemon that must load it.
+
+**Two directives deliberately NOT added**, with the reasons recorded in
+the unit files rather than left to be rediscovered:
+
+* `RestrictAddressFamilies` -- an incorrect list silently breaks either
+  the PostgreSQL socket or device SSH, and the correct list depends on
+  what the resolver and TLS stack use at runtime. Worth adding once it
+  can be verified on a real deployment instead of guessed.
+* `CapabilityBoundingSet` -- binding the management GUI to port 443 is
+  a supported configuration needing `CAP_NET_BIND_SERVICE`, so a
+  bounding set chosen for the default port 8420 would break it. For
+  tac_plus-ng, `AmbientCapabilities` already grants exactly the one
+  capability it needs.
+
+Both rendered unit files were parsed and checked for malformed lines
+rather than assumed valid.
+
+**Dependencies -- one vulnerable floor found.** `jinja2>=3.1.4` allows
+resolving to 3.1.4, which is affected by CVE-2024-56326 and
+CVE-2024-56201 (fixed in 3.1.5) and CVE-2025-27516 (fixed in 3.1.6).
+Floor raised to 3.1.6.
+
+Exploitability here is low and that is stated in the file rather than
+used as an excuse: those flaws require rendering an attacker-controlled
+template, and every template in this project is a file in the
+repository -- verified that no user input is ever compiled as one. Low
+exploitability is an argument for not panicking, not for shipping a
+floor every scanner will flag.
+
+Every other floor was checked against known advisories and is clear:
+`python-multipart>=0.0.19` is past CVE-2024-53981, and fastapi,
+uvicorn, sqlalchemy, psycopg, pydantic, bcrypt, cryptography,
+itsdangerous, ldap3 and paramiko all have current floors.
+
+---
+
+### Security — path traversal: none found. TLS private key creation race: fixed
+
+**Path traversal -- clean, and worth recording why.**
+
+Every filesystem path in the application is a module-level constant.
+No API endpoint combines a request parameter with a path: the log
+endpoints use `ACCESS_LOG_PATH` and `AUTHORIZATION_LOG_PATH`
+constants, the compliance loader iterates a fixed tuple of framework
+files, and NCM serves archived configuration from the DATABASE rather
+than from disk. Checked from both directions -- parameters that look
+path-like, and every filesystem read reachable from `app/api`.
+
+Two adjacent checks while there:
+
+* The log `search` parameter is a plain substring filter
+  (`needle = search.lower()`), not a regex, so it carries no ReDoS
+  risk.
+* The diagnostics log endpoint allow-lists unit names against a fixed
+  set rather than passing them through.
+
+**TLS private key was briefly world-readable (fixed).**
+
+`write_active_certificate` wrote the key with `write_bytes` and chmod-ed
+it to 0600 afterwards. `write_bytes` creates a NEW file with the process
+umask -- 0644 on a default Ubuntu -- so there was a window between
+creation and chmod in which the TLS private key was readable by every
+local account.
+
+The window is short and only occurs on the first write, since a
+rewrite preserves the existing mode. It is also free to close, which is
+what decided it: `os.open` with an explicit mode applies the
+permissions at creation, so the key is never 0644 at any instant.
+
+Demonstrated rather than reasoned about: `write_bytes` produces 0644,
+`os.open(..., 0o600)` produces 0600.
+
+The certificate pair is validated before either file is written, so an
+invalid upload cannot replace a working certificate -- that part was
+already right.
+
+---
+
+### Security — XSS: the HTML escaper was not attribute-safe, in 32 places (fixed)
+
+`escapeHtml` was implemented by setting `textContent` and reading back
+`innerHTML`. That escapes `&`, `<` and `>` but NOT quotes -- safe in
+text position, unsafe inside an attribute, where a value containing
+`" onerror="alert(1)` closes the attribute and adds a new one.
+
+An audit found **31 places where escaped output lands inside an HTML
+attribute**: `title`, `value`, `aria-label`, and various `data-*`
+attributes across 20 templates.
+
+**The important part came second.** Fixing the shared helper in
+`app.js` protected almost nothing, because **31 templates define their
+own copy** of `escapeHtml` rather than using it -- all carrying the
+same weak implementation. The fix only became real when every copy was
+replaced.
+
+That was caught by a test assertion, not by inspection. Had the test
+only exercised the shared helper it would have passed while 31 pages
+stayed vulnerable, which is the worst possible outcome for a security
+test.
+
+All 32 definitions now escape `&`, `<`, `>`, `"` and `'`. Quotes render
+as ordinary quotes in text position, so there is no visible change --
+strictly safer, same output.
+
+**Triage of the rest**: most unescaped interpolations turned out to be
+UUIDs, counters or pre-built HTML. The genuinely free-text fields --
+`p.reason`, `execution.command`, `badRegex.match_value` -- are all
+assigned via `textContent`, which is inherently safe. Identifier
+fields (device, group, user, policy names) are protected by the shared
+input pattern, which excludes quotes and angle brackets entirely.
+
+**New `tests/test_security_xss.py`**: seven payloads asserted neutral
+in both text and attribute position, the three free-text fields checked
+for safe rendering, and -- the check that mattered -- every local
+`escapeHtml` copy asserted to escape quotes.
+
+**Verified it catches a regression**: reverting one template to the
+weak version produces two failures naming it.
+
+**Verified nothing broke**: all 51 templates parse and 96 rendered
+script blocks pass Node syntax checks after the bulk edit.
+
+---
+
+### Security — secrets sweep: world-readable config files and short-secret disclosure (fixed)
+
+**1. Generated configuration was world-readable.**
+
+The installer set 0640 on the bootstrap file, but every RUNTIME write
+used a plain `write_text`: the Apply path, the rollback path, and every
+version backup. `write_text` creates a new file with the process umask,
+which is 0644 on a default Ubuntu.
+
+Those files contain every device's TACACS+ and RADIUS shared secret in
+cleartext. Any local account on the server could read them, and every
+Apply produced another copy in the backups directory.
+
+All three writes now go through one helper that chmods 0640
+afterwards. Demonstrated rather than asserted: a plain `write_text`
+produces 0644, the helper produces 0640, and it stays 0640 on rewrite.
+
+A chmod failure logs loudly but does NOT fail the Apply -- the
+configuration is already written and the daemon needs it, so refusing
+the operation would turn a permissions problem into an outage.
+
+**2. A short shared secret was echoed back in full.**
+
+`_secret_suffix` showed the last four characters of a device's secret,
+with `plaintext[-4:] if len(plaintext) >= 4 else plaintext` -- so a
+secret shorter than four characters was returned ENTIRE, and half of
+an eight-character one was revealed, to anyone holding `devices:view`.
+
+The code justified this by comparison with AWS and Stripe key
+prefixes. That comparison holds for a 40-character key; it does not
+hold for `cisco123`. Nothing is shown now unless the secret is at
+least 12 characters, so at most a third is ever revealed and usually
+an eighth. `has_secret` still reports whether one is set.
+
+Worth noting the schema permits `min_length=1`, so a one-character
+secret is accepted -- the disclosure was reachable, not theoretical.
+
+**Checked clean**: no hardcoded credentials in source, no secrets in
+log calls, and no response schema returning a decrypted secret --
+`has_password` / `has_secret` booleans are used throughout, which is
+the right pattern.
+
+**New `tests/test_security_secrets.py`** covering file modes, the
+absence of any direct `write_text` on a config path, the suffix
+threshold, and the log sweep.
+
+**Note on this entry.** A container reset destroyed the working
+directory mid-session and the work was rebuilt from the last packaged
+archive, which predated these two fixes. Both were redone and
+re-verified from scratch rather than assumed still present -- the
+archive was checked for them explicitly and they were absent.
+
+---
+
+### Security — SSH host keys were never verified (fixed): the highest-severity finding
+
+All three SSH code paths used `paramiko.AutoAddPolicy`, which accepts
+whatever host key the far end presents, silently, with no record. No
+`known_hosts`, no `load_system_host_keys`, nothing.
+
+**What an on-path attacker gets.** Impersonating a switch captures the
+service account's SSH username and password -- which is reused across
+the fleet -- and the TACACS+ shared secret, because provisioning pushes
+`tacacs-server host <ip> key <secret>` over that very session. With
+that secret an attacker can forge or decrypt TACACS+ traffic for the
+device. That is a full AAA compromise from a passive network position.
+
+**Fixed with trust-on-first-use pinning**, not strict verification, and
+the reason matters: strict checking against a populated `known_hosts`
+is stronger, and would break every existing installation on the first
+connection, because no keys have ever been recorded. An upgrade that
+stops all device management is not a security improvement anyone keeps
+running.
+
+So the first connection RECORDS the device's key fingerprint and every
+later one VERIFIES against it. A changed key is refused with a
+`HostKeyChangedError` naming both fingerprints, so an administrator
+comparing them against the device console can tell a legitimate
+rebuild from an attack.
+
+**The honest limit, stated rather than glossed:** a device impersonated
+at the very FIRST connection is trusted from then on. What this catches
+is interception of an established device, which is the realistic threat
+on a management network.
+
+**Recording a key must never fail a connection.** If the database is
+unavailable the device simply stays unpinned and is learned next time.
+The alternative -- refusing to manage devices because a fingerprint
+could not be stored -- turns a storage hiccup into an outage.
+
+Two new nullable columns on `NetworkDevice`. Null means "learn on next
+connect", not "skip verification for ever". The pinning parameters are
+keyword-only with defaults, so every existing caller keeps working and
+simply learns on first use.
+
+**New `tests/test_security_ssh_hostkey.py`**: learning, acceptance,
+refusal of a changed key, storage-failure tolerance, and a guard that
+`AutoAddPolicy` cannot reappear in either SSH module.
+
+**Two process notes.** My first attempt at wiring the import put it
+inside a function body, because `import paramiko` in that file is
+function-local and my search matched it -- caught by compilation. The
+second attempt inserted parameters at a regex-matched position that was
+not the signature; caught by re-parsing rather than by trusting the
+edit. Both were fixed by using AST node positions instead of text
+matching.
+
+---
+
 ### Security — RBAC audit: 5 permissions offered in the UI but enforced nowhere (fixed)
 
 Second audit finding, and a systematic one. All 199 API endpoints were

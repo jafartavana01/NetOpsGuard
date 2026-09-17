@@ -101,6 +101,12 @@ def _group_names(db: Session) -> dict[uuid.UUID, str]:
     return {g.id: g.name for g in db.query(DeviceGroup).all()}
 
 
+#: Below this length, showing the last four characters gives away too
+#: large a fraction of the secret, so nothing is shown at all. The GUI
+#: still reports that a secret IS set, via `has_secret`.
+_MIN_LENGTH_FOR_SUFFIX = 12
+
+
 def _secret_suffix(device: NetworkDevice) -> str | None:
     """
     The last 4 characters of the real secret, and nothing else --
@@ -119,7 +125,17 @@ def _secret_suffix(device: NetworkDevice) -> str | None:
         plaintext = security.decrypt_secret(device.shared_secret_encrypted)
     except Exception:
         return None
-    return plaintext[-4:] if len(plaintext) >= 4 else plaintext
+    # Only show a suffix when the secret is long enough that four
+    # characters is a small part of it.
+    #
+    # The previous version returned `plaintext` ENTIRE when it was
+    # shorter than four characters, and revealed half of an
+    # eight-character one. The AWS/Stripe comparison holds for a
+    # 40-character key; it does not hold for `cisco123`, and this
+    # endpoint is readable by anyone with devices:view.
+    if len(plaintext) < _MIN_LENGTH_FOR_SUFFIX:
+        return None
+    return plaintext[-4:]
 
 
 def _to_out(device: NetworkDevice, group_name: str | None = None) -> DeviceOut:

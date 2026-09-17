@@ -443,10 +443,28 @@ window.AAAPlatform = (function () {
   // tweaks one copy", and means a change to card markup lands
   // everywhere at once.
 
+  /**
+   * Escapes a value for insertion into HTML.
+   *
+   * The previous implementation set `textContent` and read back
+   * `innerHTML`, which escapes `&`, `<` and `>` but NOT quotes. That is
+   * safe in text position and unsafe in an attribute: a value
+   * containing `" onerror="alert(1)` closes the attribute and adds a
+   * new one. An audit found 31 places where escaped output lands
+   * inside an attribute, so the fix belongs here rather than in 31
+   * call sites -- and it protects the 32nd, which nobody has written
+   * yet.
+   *
+   * Quotes are escaped to entities, which render as ordinary quotes in
+   * text position, so this is strictly safer with no visible change.
+   */
   function escapeHtml(value) {
-    const div = document.createElement('div');
-    div.textContent = value == null ? '' : String(value);
-    return div.innerHTML;
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   function cssVar(name) {

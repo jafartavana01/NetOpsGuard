@@ -53,7 +53,18 @@ pydantic-settings>=2.7.0,<3.0
 bcrypt>=4.2.1,<6.0
 cryptography>=44.0.0,<48.0
 itsdangerous>=2.2.0,<3.0
-jinja2>=3.1.4,<4.0
+# jinja2's floor is 3.1.6, not 3.1.4: 3.1.4 is affected by
+# CVE-2024-56326 and CVE-2024-56201 (sandbox escapes, fixed in 3.1.5)
+# and CVE-2025-27516 (fixed in 3.1.6). A floor of 3.1.4 lets pip
+# resolve to a version with known advisories.
+#
+# Exploitability HERE is low: those flaws require rendering an
+# attacker-controlled template, and every template in this project is
+# a file in the repository -- no user input is ever compiled as a
+# template. The floor is raised anyway, because "low exploitability"
+# is an argument for not panicking, not for shipping a known-vulnerable
+# floor that every dependency scanner will flag.
+jinja2>=3.1.6,<4.0
 python-multipart>=0.0.19,<1.0
 # ldap3, not python-ldap: pure-Python LDAP implementation, no
 # dependency on system OpenLDAP client libraries -- consistent with

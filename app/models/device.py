@@ -78,6 +78,18 @@ class NetworkDevice(Base):
     radius_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     radius_secret_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    #: SHA256 fingerprint of the device's SSH host key, recorded on the
+    #: first successful connection and verified on every later one.
+    #:
+    #: Nullable because an existing installation has never recorded
+    #: one, and because a device this platform has not yet contacted
+    #: legitimately has none. Null means "learn on next connect", not
+    #: "skip verification for ever".
+    ssh_host_key_fingerprint: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    ssh_host_key_pinned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

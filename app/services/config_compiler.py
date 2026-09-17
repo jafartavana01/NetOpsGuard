@@ -17,6 +17,8 @@ docs/ARCHITECTURE.md for why they're two files, not one.
 """
 from __future__ import annotations
 
+import logging
+
 import difflib
 import subprocess
 from dataclasses import dataclass
@@ -1220,12 +1222,42 @@ def _next_version_number(db: Session) -> int:
     return (current_max or 0) + 1
 
 
+#: Permissions for any file containing generated configuration.
+#:
+#: That content includes EVERY device's TACACS+ and RADIUS shared
+#: secret in cleartext, so it must not be world-readable. The installer
+#: already set this on the bootstrap file, but the runtime writes did
+#: not -- meaning every Apply and every backup produced a 0644 file
+#: (umask 022), readable by any local account on the server.
+_CONFIG_FILE_MODE = 0o640
+
+
+def _write_config_file(path: Path, content: str) -> None:
+    """Writes generated configuration and restricts its permissions.
+
+    The chmod happens after the write and is not optional: `write_text`
+    on a NEW file creates it with the process umask, which on a default
+    Ubuntu install is world-readable."""
+    path.write_text(content, encoding="utf-8")
+    try:
+        path.chmod(_CONFIG_FILE_MODE)
+    except OSError:
+        # Failing to tighten permissions must not fail the apply -- the
+        # configuration is already written and the daemon needs it --
+        # but it IS worth a loud log line, because the file is readable
+        # by more accounts than intended until someone acts.
+        logging.getLogger(__name__).error(
+            "Could not restrict permissions on %s -- it contains shared secrets "
+            "and may be readable by other local accounts.", path,
+        )
+
+
 def _backup_active(version_number: int) -> Path | None:
     if not ACTIVE_CONFIG_PATH.exists():
         return None
     BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
     backup_path = BACKUPS_DIR / f"tac_plus-ng.conf.v{version_number - 1}.bak"
-    backup_path.write_text(ACTIVE_CONFIG_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+    _write_config_file(backup_path, ACTIVE_CONFIG_PATH.read_text(encoding="utf-8"))
     return backup_path
 
 
@@ -1274,7 +1306,7 @@ def apply_candidate(
     _backup_active(version_number)
 
     GENERATED_DIR.mkdir(parents=True, exist_ok=True)
-    ACTIVE_CONFIG_PATH.write_text(candidate_text, encoding="utf-8")
+    _write_config_file(ACTIVE_CONFIG_PATH, candidate_text)
 
     # Record the integrity baseline from the text we INTENDED to write,
     # not by re-reading the file. Re-reading would trust whatever is on
@@ -1339,7 +1371,7 @@ def apply_candidate(
 
 
 def _rollback(db: Session, previous_content: str, *, reason: str) -> None:
-    ACTIVE_CONFIG_PATH.write_text(previous_content, encoding="utf-8")
+    _write_config_file(ACTIVE_CONFIG_PATH, previous_content)
     try:
         service_control.reload(service_control.TAC_PLUS_NG_UNIT)
     except service_control.ServiceControlError:

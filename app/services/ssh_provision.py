@@ -35,6 +35,8 @@ syntax a specific device supports.
 """
 from __future__ import annotations
 
+from . import ssh_host_keys
+
 import re
 from dataclasses import dataclass, field
 
@@ -77,6 +79,10 @@ def gather_device_info(
     host: str, username: str, password: str, *, port: int = 22,
     connect_timeout: int = DEFAULT_CONNECT_TIMEOUT_SECONDS,
     command_timeout: int = DEFAULT_COMMAND_TIMEOUT_SECONDS,
+    # Host-key pinning. Defaulted so every existing caller keeps
+    # working and simply learns the key on first connect.
+    expected_host_key: str | None = None,
+    on_host_key_learned=None,
 ) -> SshResult:
     """
     Connects, reads the initial prompt (for a hostname suggestion),
@@ -100,7 +106,13 @@ def gather_device_info(
     import paramiko
 
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.set_missing_host_key_policy(
+        ssh_host_keys.PinnedHostKeyPolicy(
+            expected=expected_host_key,
+            on_learn=on_host_key_learned,
+            device_label=host,
+        )
+    )
     try:
         client.connect(host, port=port, username=username, password=password, timeout=connect_timeout, look_for_keys=False, allow_agent=False)
         shell = client.invoke_shell()
@@ -244,6 +256,10 @@ def apply_aaa_config(
     host: str, username: str, password: str, *, commands: list[str], port: int = 22,
     connect_timeout: int = DEFAULT_CONNECT_TIMEOUT_SECONDS,
     command_timeout: int = DEFAULT_COMMAND_TIMEOUT_SECONDS,
+    # Host-key pinning. Defaulted so every existing caller keeps
+    # working and simply learns the key on first connect.
+    expected_host_key: str | None = None,
+    on_host_key_learned=None,
 ) -> SshResult:
     """Connects, runs each command in `commands` in an interactive
     shell (needed for `configure terminal`-style multi-command
@@ -259,7 +275,13 @@ def apply_aaa_config(
     import paramiko
 
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.set_missing_host_key_policy(
+        ssh_host_keys.PinnedHostKeyPolicy(
+            expected=expected_host_key,
+            on_learn=on_host_key_learned,
+            device_label=host,
+        )
+    )
     log: list[str] = []
     try:
         client.connect(host, port=port, username=username, password=password, timeout=connect_timeout, look_for_keys=False, allow_agent=False)

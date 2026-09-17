@@ -82,6 +82,31 @@ StandardError=append:{log_dir}/application.log
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+PrivateDevices=true
+
+# Every file this service creates is group-readable at most.
+#
+# A security audit found the generated tac_plus-ng configuration being
+# written 0644 -- world-readable, containing every device's shared
+# secret. The application now chmods those files explicitly, and this
+# makes the same mistake impossible at the OS level for any file the
+# service creates, including ones added later by code that forgets.
+UMask=0027
+
+# NOT set, deliberately:
+#   RestrictAddressFamilies -- an incorrect list silently breaks either
+#     the PostgreSQL socket or device SSH, and the safe list depends on
+#     what the resolver and TLS stack use at runtime. Worth adding once
+#     it can be verified on a real deployment rather than guessed.
+#   CapabilityBoundingSet -- binding the management GUI to port 443 is
+#     a supported configuration and needs CAP_NET_BIND_SERVICE, so a
+#     bounding set chosen for the default port 8420 would break it.
 ReadWritePaths={log_dir} /opt/aaa-platform/generated /opt/aaa-platform/backups /var/lib/aaa-platform /var/lib/sudo /etc/aaa-platform/config /etc/aaa-platform/tls
 
 [Install]
@@ -108,6 +133,22 @@ StandardError=append:{log_dir}/tac_plus-ng.log
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+PrivateDevices=true
+UMask=0027
+
+# CapabilityBoundingSet is NOT narrowed here even though the required
+# capability is known (CAP_NET_BIND_SERVICE, for port 49): the daemon's
+# full capability requirements were never verified against a real run,
+# and a bounding set that is too tight fails at bind time with an error
+# that looks nothing like its cause. AmbientCapabilities above already
+# grants only the one capability it needs to acquire.
 ReadWritePaths={log_dir}
 
 [Install]
