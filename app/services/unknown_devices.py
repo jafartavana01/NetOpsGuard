@@ -39,7 +39,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from ..models.device import NetworkDevice
-from . import accounting_log
+from . import accounting_log, tacacs_watch
 
 
 @dataclass
@@ -159,6 +159,34 @@ def find_unknown(db: Session, *, limit: int = 2000, max_users: int = 5) -> list:
             when = accounting_log.timestamp_of(raw)
             for address in _addresses_in(raw):
                 note(address, when, None, source)
+
+    # Observed connections, from the packet watcher.
+    #
+    # This is the source that finds a device the daemon never logged --
+    # a client with no matching host block, which is exactly the case
+    # the log-based search above cannot see. It is optional: if the
+    # watcher service is not running the file is absent and this adds
+    # nothing, so the feature degrades to log-only rather than failing.
+    for entry in tacacs_watch.read_observed():
+        address = entry.get("ip")
+        if not address:
+            continue
+        when = None
+        raw_last = entry.get("last_seen")
+        if raw_last:
+            try:
+                when = datetime.fromisoformat(raw_last)
+            except (TypeError, ValueError):
+                when = None
+        label = "TACACS+ port" if entry.get("protocol") == "tacacs" else "RADIUS port"
+        existing = found.get(address)
+        before = existing.attempts if existing else 0
+        note(address, when, None, label)
+        # The watcher counts real connection attempts; carry that
+        # through rather than counting this as one sighting.
+        entry_count = entry.get("count")
+        if isinstance(entry_count, int) and entry_count > 1 and address in found:
+            found[address].attempts = before + entry_count
 
     # Most recently active first: a device that contacted the platform
     # a minute ago is more likely to be the one being set up than one

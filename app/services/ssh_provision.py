@@ -148,18 +148,27 @@ def gather_device_info(
 
 
 def _read_until_idle(shell, *, max_bytes: int = 8192, timeout: int = DEFAULT_COMMAND_TIMEOUT_SECONDS) -> str:
-    import time
+    """
+    Reads until the device's own prompt reappears.
 
-    buffer = ""
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if shell.recv_ready():
-            chunk = shell.recv(max_bytes).decode(errors="replace")
-            buffer += chunk
-            deadline = time.time() + 1.5  # a little quiet time after the last chunk, not the full timeout again
-        else:
-            time.sleep(0.1)
-    return buffer
+    This used to spin until the full timeout every time the device went
+    quiet -- it had no way to tell "finished" from "still thinking", so
+    it always assumed the latter. With around fourteen commands in the
+    default AAA template, applying to ONE device took two to three
+    minutes of almost entirely waiting.
+
+    `network_ops_execution._read_until_prompt` already solved this for
+    NCM backups, by returning as soon as the prompt reappears at the end
+    of the stream. It is reused here rather than reimplemented: a second
+    copy of prompt-detection logic would drift, and this one is already
+    proven against real Cisco output including the pager.
+
+    The name is kept so existing callers do not change; the behaviour is
+    now prompt-driven rather than clock-driven.
+    """
+    from .network_ops_execution import _read_until_prompt
+
+    return _read_until_prompt(shell, timeout_seconds=timeout, max_bytes=max(max_bytes, 65536))
 
 
 def default_command_templates() -> list[str]:

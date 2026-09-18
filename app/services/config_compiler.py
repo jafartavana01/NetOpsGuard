@@ -284,6 +284,43 @@ def _mavis_block(settings: AdSettings | None, *, radius_enabled: bool = False) -
     return "\n".join(lines) + "\n"
 
 
+def _radius_dictionary_include() -> str:
+    """
+    The `include` line for the RADIUS dictionary, as an absolute path.
+
+    Resolution order matches app.services.radius_dictionary, so the
+    attribute names the GUI offers and the ones the daemon loads come
+    from the SAME file. If they diverged, an operator could pick an
+    attribute that the daemon then rejects.
+
+    Returns an empty string when no dictionary can be found, with a
+    comment in the generated file saying so. That is deliberate: a
+    missing include costs vendor attributes, while a BROKEN include
+    makes the daemon exit on a fatal error and take all AAA down with
+    it. Degrading is better than failing closed here, and the comment
+    means the reason is visible in the file itself.
+    """
+    from .radius_dictionary import DEFAULT_DICT_PATHS
+
+    for candidate in DEFAULT_DICT_PATHS:
+        try:
+            if candidate.exists():
+                return f'    include = {_quote(str(candidate))}\n'
+        except OSError:
+            continue
+
+    logging.getLogger(__name__).warning(
+        "No RADIUS dictionary file found; vendor attributes will be unavailable. "
+        "Looked in: %s", ", ".join(str(p) for p in DEFAULT_DICT_PATHS),
+    )
+    return (
+        "    # No RADIUS dictionary file was found on this host, so no include is\n"
+        "    # emitted. Vendor attributes (Cisco:, MikroTik: and so on) will not\n"
+        "    # resolve until one is present. Expected at:\n"
+        + "".join(f"    #   {p}\n" for p in DEFAULT_DICT_PATHS)
+    )
+
+
 def _radius_blocks(settings) -> dict:
     """
     Builds the four RADIUS fragments injected into STATIC_PREAMBLE.
@@ -330,12 +367,26 @@ def _radius_blocks(settings) -> dict:
         "    radius.access log = rad-accesslog\n"
         "    radius.accounting log = rad-acctlog\n"
     )
-    # $CONFDIR is resolved by the daemon itself; the dictionaries ship
-    # with the distribution, so they are referenced rather than copied.
-    include = (
-        '    include = "$CONFDIR/radius-dict.cfg"\n'
-        if settings.include_dictionaries else ""
-    )
+    # An ABSOLUTE path, not "$CONFDIR/radius-dict.cfg".
+    #
+    # `$CONFDIR` is the directory of the file the daemon is currently
+    # parsing, and that broke the include twice over:
+    #
+    #   * During validation the candidate is written to a temp file in
+    #     /tmp, so the daemon looked for /tmp/radius-dict.cfg and
+    #     refused the whole configuration:
+    #       "Couldn't open /tmp/radius-dict.cfg: No such file or directory"
+    #       "RADIUS dictionary 'MikroTik' unknown"
+    #
+    #   * At RUNTIME it resolved to the generated directory -- and
+    #     nothing has ever copied the dictionary there. So the include
+    #     was broken in production too, which is why RADIUS never
+    #     worked: without the dictionary, every vendor attribute is an
+    #     unknown name and the daemon exits on a fatal config error.
+    #
+    # Resolving to a real absolute path fixes both, because it does not
+    # depend on where the file being parsed happens to live.
+    include = _radius_dictionary_include() if settings.include_dictionaries else ""
     return {
         "radius_listen_block": listen,
         "radius_log_block": logs,

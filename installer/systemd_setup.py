@@ -156,6 +156,74 @@ WantedBy=multi-user.target
 """
 
 
+TACACS_WATCH_UNIT_TEMPLATE = """[Unit]
+Description=NetOpsGuard TACACS+/RADIUS client observer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={user}
+Group={group}
+WorkingDirectory={install_root}
+ExecStart={python_bin} -m app.services.tacacs_watch
+Environment=PYTHONPATH={install_root}
+Restart=on-failure
+RestartSec=10
+
+# The ONLY reason this unit exists as a separate service.
+#
+# Observing connections to a port another process owns needs raw packet
+# access. Granting CAP_NET_RAW to the web application would give a
+# network-facing service the ability to read any traffic on the host --
+# a large increase in what a flaw there could reach. This process does
+# one thing, reads no payload, and holds no database connection.
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+UMask=0027
+ReadWritePaths=/var/lib/aaa-platform
+
+[Install]
+WantedBy=multi-user.target
+"""
+
+
+TACACS_WATCH_UNIT_NAME = "netopsguard-tacacs-watch.service"
+TACACS_WATCH_UNIT = TACACS_WATCH_UNIT_NAME
+
+
+def write_tacacs_watch_unit(python_bin: str) -> Path:
+    """
+    Writes the client-observer unit.
+
+    Kept OPTIONAL by the caller: the discovery feature degrades to
+    log-only when this is not running, so an operator who would rather
+    not grant CAP_NET_RAW anywhere simply does not enable it.
+    """
+    content = TACACS_WATCH_UNIT_TEMPLATE.format(
+        user=SERVICE_USER,
+        group=SERVICE_GROUP,
+        install_root=INSTALL_ROOT,
+        python_bin=python_bin,
+    )
+    path = SYSTEMD_DIR / TACACS_WATCH_UNIT_NAME
+    path.write_text(content, encoding="utf-8")
+    utils.ok(f"Wrote {path}")
+    return path
+
+
 def write_management_unit(python_bin: str = "/usr/bin/python3") -> Path:
     """
     WorkingDirectory is INSTALL_ROOT (/opt/aaa-platform), NOT APP_DIR

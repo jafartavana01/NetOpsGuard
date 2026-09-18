@@ -27,6 +27,118 @@ and every RADIUS nav entry is confirmed to resolve to a registered
 route. A "the regex ran without error" result is not evidence the edit
 happened.
 
+### Added — real client discovery: a packet observer for TACACS+ and RADIUS
+
+The existing "seen but not added" feature reads the tac_plus-ng logs,
+which only ever finds clients the daemon chose to log. A device with no
+matching `host` block can be rejected before anything is written -- so
+the devices most worth finding, the ones nobody has added yet, are
+exactly the ones it misses. That is why it showed nothing.
+
+**Two corrections to the premise, both checked.** TACACS+ is **TCP**
+port 49, not UDP -- the reported capture shows TCP flags (`[S]`,
+`[P.]`), which settles it. RADIUS is the UDP one, 1812 and 1813. And
+yes, a process can observe traffic to a port another process owns; it
+just cannot do it by binding that port.
+
+**Three approaches were measured before choosing.**
+
+* Binding port 49 is impossible -- tac_plus-ng owns it.
+* Polling `/proc/net/tcp` needs no privilege at all and was tried
+  first. A real TACACS+ authentication in the capture lasted **47 ms**,
+  so a one-second poll catches roughly **5%** of them. A device
+  retrying in a loop would eventually appear; a single login attempt
+  would almost certainly be missed. Not good enough for a feature whose
+  entire purpose is "show me what just tried".
+* Shelling out to tcpdump works, but means parsing another tool's text
+  and supervising a subprocess.
+
+So: a raw socket reading IP headers. That needs `CAP_NET_RAW`.
+
+**The capability goes to its own tiny service, not to the web
+application.** Granting raw packet access to a network-facing web
+service would greatly widen what a flaw there could reach. The observer
+holds no database connection, reads **no packet payload** -- only the
+IP header and the first four bytes of the transport header -- and
+publishes to a file the web service reads. Reading TACACS+ payload
+would mean handling credentials, which it has no reason to do.
+
+Only client SYN packets are recorded, so one login is one observation
+rather than one per packet. Verified against synthesised packets: a
+TACACS+ SYN is recorded, a server SYN-ACK is not, a mid-session data
+packet is not, RADIUS on 1812/1813 is, and SSH, HTTPS and truncated
+packets are ignored.
+
+**The feature degrades rather than failing.** If the observer is not
+running, the file is absent and discovery falls back to log-only. An
+operator who would rather not grant `CAP_NET_RAW` anywhere simply does
+not enable the unit.
+
+Observations expire after seven days and are capped at 500 addresses,
+so a busy network cannot grow the file without bound, and a device that
+was added or was a one-off mistake stops being offered forever.
+
+---
+
+### Fixed — RADIUS never worked: the dictionary include was broken in two ways
+
+Diagnosed from a real apply failure:
+
+    Couldn't open /tmp/radius-dict.cfg: No such file or directory
+    /tmp/tmpj85fllpd.conf:95: RADIUS dictionary 'MikroTik' unknown
+    Detected fatal configuration error. Exiting.
+
+The compiler emitted `include = "$CONFDIR/radius-dict.cfg"`, and
+`$CONFDIR` is the directory of the file the daemon is CURRENTLY
+PARSING. That broke twice over:
+
+* **During validation**, the candidate is written to a temp file in
+  /tmp, so the daemon looked for `/tmp/radius-dict.cfg`, did not find
+  it, and refused the whole configuration. This is what the user saw.
+* **At runtime it was broken too, and always had been.** `$CONFDIR`
+  resolves to the generated directory, and **nothing in this project
+  has ever copied the dictionary there.** Without it every vendor
+  attribute is an unknown name and the daemon exits fatally -- which is
+  why RADIUS has never worked, not merely why this apply failed.
+
+The second point is the important one: the reported symptom was a
+validation error, and fixing only that would have moved the same
+failure from validation into production.
+
+Now resolved to an ABSOLUTE path, using the same search order as
+`radius_dictionary`, so the attributes the GUI offers and the ones the
+daemon loads come from the same file. An absolute path does not depend
+on where the file being parsed lives, so validation and runtime behave
+identically.
+
+When no dictionary can be found anywhere, the include is OMITTED and a
+comment in the generated file explains why, listing the paths searched.
+A missing include costs vendor attributes; a broken one makes the
+daemon exit and takes all AAA down with it.
+
+### Fixed — applying AAA to one device took minutes instead of seconds
+
+`_read_until_idle` waited the full command timeout every time the
+device went quiet. It had no way to tell "finished" from "still
+thinking", so it always assumed the latter. With around fourteen
+commands in the default AAA template, a single device spent two to
+three minutes almost entirely waiting.
+
+**This codebase had already solved it once.**
+`network_ops_execution._read_until_prompt` returns as soon as the
+device's own prompt reappears at the end of the stream -- written for
+the NCM backup bug, and proven against real Cisco output including the
+pager. It is now reused rather than reimplemented: a second copy of
+prompt-detection would drift from the first.
+
+Measured against a simulated device answering immediately, fourteen
+commands: **21.2s before, effectively instant after.** On a real device
+the old path was worse, which matches the three minutes reported.
+
+The function name is unchanged, so no caller was touched.
+
+---
+
 ### Security — systemd hardening, sudo review, dependency floors (audit complete)
 
 **sudo -- already correct, and worth saying so.** The sudoers file
