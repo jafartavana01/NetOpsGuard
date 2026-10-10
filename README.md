@@ -7,6 +7,7 @@ NetOpsGuard is a self-hosted network operations and security platform for managi
 It combines TACACS+ AAA, device security auditing, configuration management, network command jobs, accounting, sessions, and Active Directory/LDAP integration.
 
 ## Main capabilities
+<img width="1024" height="1536" alt="NetOpsGuard secure network operations hub" src="https://github.com/user-attachments/assets/c1abe186-dd4e-4519-8585-98b2f2eb2e1f" />
 
 - TACACS+ authentication, authorization, accounting, and command authorization
 - Local users and Active Directory/LDAP identity integration through MAVIS
