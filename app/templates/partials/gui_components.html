@@ -1,0 +1,9 @@
+{# Opt-in GUI-01 foundations; caller controls permission-gated actions. #}
+{% macro page_header(title,description='') %}
+<header class="page-header"><div><h1>{{ title }}</h1>{% if description %}<p class="content-sub">{{ description }}</p>{% endif %}</div><div class="page-actions">{{ caller() if caller is defined else '' }}</div></header>
+{% endmacro %}
+{% macro badge(label,tone='neutral') %}<span class="badge badge-{{ tone if tone in ['success','info','warning','danger','neutral'] else 'neutral' }}">{{ label }}</span>{% endmacro %}
+{% macro help(title) %}<details class="context-help"><summary>{{ title }}</summary><div>{{ caller() }}</div></details>{% endmacro %}
+{% macro empty(title,description) %}<div class="empty-state"><h3>{{ title }}</h3><p>{{ description }}</p>{{ caller() if caller is defined else '' }}</div>{% endmacro %}
+{% macro loading(label='Loading…') %}<span class="loading-inline" role="status"><span class="spinner" aria-hidden="true"></span>{{ label }}</span>{% endmacro %}
+{% macro error(title,message) %}<section class="alert alert-danger" role="alert"><div class="alert-title">{{ title }}</div><p>{{ message }}</p>{{ caller() if caller is defined else '' }}</section>{% endmacro %}

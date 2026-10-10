@@ -64,13 +64,13 @@ def main() -> int:
     print("\n2. First connection learns the key:")
     learned = []
     policy = hk.PinnedHostKeyPolicy(expected=None, on_learn=learned.append, device_label="R1")
-    policy.missing_host_key(None, "192.168.44.10", real)
+    policy.missing_host_key(None, "192.0.2.10", real)
     check("key recorded", learned, [real_fp])
 
     print("\n3. A later connection with the same key is accepted:")
     try:
         hk.PinnedHostKeyPolicy(expected=real_fp, device_label="R1").missing_host_key(
-            None, "192.168.44.10", real)
+            None, "192.0.2.10", real)
         check("accepted", True, True)
     except Exception as exc:
         check(f"accepted (raised {exc})", False, True)
@@ -78,7 +78,7 @@ def main() -> int:
     print("\n4. A CHANGED key is refused -- the interception case:")
     try:
         hk.PinnedHostKeyPolicy(expected=real_fp, device_label="R1").missing_host_key(
-            None, "192.168.44.10", attacker)
+            None, "192.0.2.10", attacker)
         check("refused", False, True)
     except hk.HostKeyChangedError as exc:
         check("refused with HostKeyChangedError", True, True)

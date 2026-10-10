@@ -590,7 +590,7 @@ window.AAAPlatform = (function () {
    * table was built and needs no data model.
    */
   //: An IPv4 address, possibly with a /prefix. Detected before numeric
-  //: comparison because `parseFloat("192.168.44.10")` reads 192.168 --
+  //: comparison because `parseFloat("192.0.2.10")` reads 192 --
   //: so every address in a column compares EQUAL and the column does
   //: not sort at all. A device table is mostly addresses, so this is
   //: the case that matters most.

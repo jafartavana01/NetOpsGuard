@@ -58,23 +58,23 @@ def _load_module():
 
 # Real lines, tabs restored.
 ACCESS_LINES = [
-    "2026-09-12 21:57:31 +0000 192.168.44.10\tu1\ttty0\tasync\tshell login succeeded",
-    "2026-09-13 05:12:20 +0000 192.168.44.10\tjafar\ttty0\tasync\tshell login failed",
-    "2026-09-13 05:12:53 +0000 192.168.44.10\tsakjdkasd\ttty0\tasync\tshell login failed",
+    "2026-09-12 21:57:31 +0000 192.0.2.10\tu1\ttty0\tasync\tshell login succeeded",
+    "2026-09-13 05:12:20 +0000 192.0.2.10\toperator\ttty0\tasync\tshell login failed",
+    "2026-09-13 05:12:53 +0000 192.0.2.10\tsakjdkasd\ttty0\tasync\tshell login failed",
 ]
 
 AUTHORIZATION_LINES = [
     # Seven fields: a session authorization, no command.
-    "2026-09-12 21:57:32 +0000 192.168.44.10\tu1\ttty0\tasync\tnnnn\tpermit\tshell",
-    "2026-09-12 21:57:35 +0000 192.168.44.10\tu1\ttty0\tasync\tnnnn\tpermit\tshell\tconfigure terminal <cr>",
-    "2026-09-12 21:57:40 +0000 192.168.44.10\tu1\ttty0\tasync\tnnnn\tdeny\tshell\tinterface FastEthernet 0/1 <cr>",
+    "2026-09-12 21:57:32 +0000 192.0.2.10\tu1\ttty0\tasync\tnnnn\tpermit\tshell",
+    "2026-09-12 21:57:35 +0000 192.0.2.10\tu1\ttty0\tasync\tnnnn\tpermit\tshell\tconfigure terminal <cr>",
+    "2026-09-12 21:57:40 +0000 192.0.2.10\tu1\ttty0\tasync\tnnnn\tdeny\tshell\tinterface FastEthernet 0/1 <cr>",
     # Cleartext credential -- must never reach a response unmasked.
-    "2026-09-12 21:58:33 +0000 192.168.44.10\tu1\ttty0\tasync\tnnnn\tpermit\tshell\tusername 11 password 22 <cr>",
+    "2026-09-12 21:58:33 +0000 192.0.2.10\tu1\ttty0\tasync\tnnnn\tpermit\tshell\tusername 11 password 22 <cr>",
 ]
 
 ACCOUNTING_LINES = [
-    "2026-09-12 21:57:32 +0000 192.168.44.10::u1::tty0::async::start::::shell::",
-    "2026-09-12 21:58:33 +0000 192.168.44.10::u1::tty0::async::stop::::shell::username 11 password *****",
+    "2026-09-12 21:57:32 +0000 192.0.2.10::u1::tty0::async::start::::shell::",
+    "2026-09-12 21:58:33 +0000 192.0.2.10::u1::tty0::async::stop::::shell::username 11 password *****",
 ]
 
 

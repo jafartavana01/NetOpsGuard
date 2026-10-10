@@ -25,6 +25,9 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models.admin import AdminUser
 from ..models.group import TacacsGroup
+from ..models.ad_settings import AdSettings
+from ..models.system_info import InstallEvent
+from ..services import policy_scope
 from ..models.policy import Policy
 from ..models.policy_condition import PolicyCondition
 from ..models.policy_condition_group import PolicyConditionGroup
@@ -90,12 +93,38 @@ def _referencing_policy_names(db: Session) -> dict[uuid.UUID, list[str]]:
     return result
 
 
-def _to_out(group: TacacsGroup, member_count: int = 0, policy_names: list[str] | None = None) -> TacacsGroupOut:
+def _binding_errors(db, group):
+    if db is None:
+        return []
+    return policy_scope.external_binding_diagnostics(group, policy_scope.ScopeInventory(
+        identity_groups=db.query(TacacsGroup).all(), users=db.query(TacacsUser).all(),
+        external_sources=db.query(AdSettings).all()))
+
+
+def _validate_binding(db, group):
+    errors = _binding_errors(db, group)
+    if errors:
+        raise HTTPException(422, detail=errors)
+
+
+@router.get("/external-sources")
+def external_sources(db: Session = Depends(get_db), _admin: AdminUser = Depends(require_permission("groups:view"))):
+    return [{'id': str(s.id), 'name': policy_scope.external_source_name(s.id), 'enabled': s.enabled,
+             'host': s.host, 'group_prefix': s.group_prefix or '', 'use_memberof': s.use_memberof}
+            for s in db.query(AdSettings).all()]
+
+
+def _to_out(group: TacacsGroup, member_count: int = 0, policy_names: list[str] | None = None, db=None) -> TacacsGroupOut:
     return TacacsGroupOut(
         id=str(group.id),
         name=group.name,
         description=group.description,
         ad_group_name=group.ad_group_name,
+        authority=group.authority,
+        external_source_id=group.external_source_id,
+        binding_status=('invalid' if _binding_errors(db, group) else 'valid') if group.authority == 'EXTERNAL' else 'unclassified',
+        binding_diagnostics=_binding_errors(db, group),
+        external_source_name=policy_scope.external_source_name(group.external_source_id) if group.external_source_id else None,
         member_count=member_count,
         referenced_by_policy_names=sorted(policy_names or []),
     )
@@ -109,7 +138,7 @@ def list_groups(
     groups = db.query(TacacsGroup).order_by(TacacsGroup.name.asc()).all()
     counts = _member_counts(db)
     policy_names = _referencing_policy_names(db)
-    return [_to_out(g, counts.get(g.id, 0), policy_names.get(g.id)) for g in groups]
+    return [_to_out(g, counts.get(g.id, 0), policy_names.get(g.id), db) for g in groups]
 
 
 @router.post("", response_model=TacacsGroupOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(verify_csrf)])
@@ -118,15 +147,18 @@ def create_group(
     db: Session = Depends(get_db),
     _admin: AdminUser = Depends(require_permission("groups:write")),
 ):
-    group = TacacsGroup(name=payload.name, description=payload.description, ad_group_name=payload.ad_group_name)
+    group = TacacsGroup(name=payload.name, description=payload.description, ad_group_name=payload.ad_group_name,
+                        authority=payload.authority, external_source_id=payload.external_source_id)
+    _validate_binding(db, group)
     db.add(group)
+    db.add(InstallEvent(event_type='group_authority_create', detail=f'Administrator {_admin.username} created group {group.name} with authority {group.authority} and source {group.external_source_id}'))
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
         raise HTTPException(status.HTTP_409_CONFLICT, detail=f"A group named '{payload.name}' already exists.")
     db.refresh(group)
-    return _to_out(group)
+    return _to_out(group, db=db)
 
 
 def _get_group_or_404(db: Session, group_id: str) -> TacacsGroup:
@@ -149,7 +181,7 @@ def get_group(
     group = _get_group_or_404(db, group_id)
     count = db.query(func.count(TacacsUser.id)).filter(TacacsUser.group_id == group.id).scalar()
     policy_names = _referencing_policy_names(db)
-    return _to_out(group, count or 0, policy_names.get(group.id))
+    return _to_out(group, count or 0, policy_names.get(group.id), db)
 
 
 @router.put("/{group_id}", response_model=TacacsGroupOut, dependencies=[Depends(verify_csrf)])
@@ -160,9 +192,17 @@ def update_group(
     _admin: AdminUser = Depends(require_permission("groups:write")),
 ):
     group = _get_group_or_404(db, group_id)
+    if group.authority == 'EXTERNAL' and 'authority' not in payload.model_fields_set:
+        raise HTTPException(409, detail='This group has an EXTERNAL binding; update authority explicitly with a compatible client.')
+    previous = (group.authority, str(group.external_source_id), group.ad_group_name, group.name)
+    group.authority = payload.authority
+    group.external_source_id = payload.external_source_id
     group.name = payload.name
     group.description = payload.description
     group.ad_group_name = payload.ad_group_name
+    _validate_binding(db, group)
+    # Reuse the existing administrative event trail, without credentials.
+    db.add(InstallEvent(event_type='group_authority_update', detail=f'Administrator {_admin.username} updated group {group.id}: {previous} -> {(group.authority, str(group.external_source_id), group.ad_group_name, group.name)}'))
     try:
         db.commit()
     except IntegrityError:
@@ -171,7 +211,7 @@ def update_group(
     db.refresh(group)
     count = db.query(func.count(TacacsUser.id)).filter(TacacsUser.group_id == group.id).scalar()
     policy_names = _referencing_policy_names(db)
-    return _to_out(group, count or 0, policy_names.get(group.id))
+    return _to_out(group, count or 0, policy_names.get(group.id), db)
 
 
 @router.delete("/{group_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(verify_csrf)])

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -21,7 +22,7 @@ from ..models.admin import AdminUser
 from ..models.policy import Policy
 from ..models.policy_command_set import PolicyCommandSet
 from ..models.policy_version import PolicyVersion
-from ..services import policy_versioning
+from ..services import policy_versioning, policy_scope, config_compiler
 from .deps import require_permission, verify_csrf
 from .routes_policies import policy_to_out
 
@@ -111,12 +112,7 @@ def restore_policy_version(
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(require_permission("policies:write")),
 ):
-    """Applies an old version's snapshot onto the live policy, then
-    records that as a brand-new version -- history only grows, per
-    §22's explicit "do not destroy historical versions." A name in
-    the snapshot (group/device/device-group/command-set) that no
-    longer exists is dropped from the restored policy with a warning
-    returned to the caller, rather than failing the whole restore."""
+    """Restore only faithfully resolvable legacy scope; reject before mutation."""
     policy = _get_policy_or_404(db, policy_id)
     try:
         parsed_version_id = uuid.UUID(version_id)
@@ -126,8 +122,38 @@ def restore_policy_version(
     if not version:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Version not found.")
 
-    snapshot = json.loads(version.snapshot)
-    resolved, warnings = policy_versioning.resolve_snapshot_for_restore(db, snapshot)
+    def reject(diagnostics):
+        raise HTTPException(409, detail={
+            'code': 'policy.restore.invalid', 'restored': False,
+            'message': 'Restore requires review. The current policy and deployed configuration have not changed.',
+            'diagnostics': [dict(d, policy_id=str(policy.id), policy_name=policy.name,
+                                 protocol='tacacs', version_id=str(version.id)) for d in diagnostics],
+        })
+
+    try:
+        snapshot = json.loads(version.snapshot)
+    except (ValueError, TypeError):
+        reject([policy_versioning.restore_diagnostic('policy.restore.snapshot_invalid', 'snapshot',
+            'The stored policy snapshot is not valid JSON.')])
+    try:
+        resolved, warnings = policy_versioning.resolve_snapshot_for_restore(db, snapshot)
+    except policy_versioning.PolicyRestoreError as exc:
+        reject(exc.diagnostics)
+    current = policy_versioning.build_snapshot(db, policy)
+    if current.get('external_scope_bindings'):
+        reject([policy_versioning.restore_diagnostic('policy.restore.external_unsupported', 'scope',
+            'Restoration of an EXTERNAL-scoped policy remains unsupported. Edit its explicit scope instead.')])
+    if any(d['code'] == 'policy.restore.tree_unsupported' for d in current.get('restoration_blockers', [])):
+        reject([policy_versioning.restore_diagnostic('policy.restore.tree_unsupported', 'tree',
+            'Legacy restoration cannot replace a condition-tree policy faithfully. Edit its explicit scope instead.')])
+    # Validate a detached proposal, not the ORM policy. Rejection cannot dirty it.
+    proposed = SimpleNamespace(id=policy.id, name=policy.name, **{
+        key: uuid.UUID(resolved[key]) if resolved[key] else None
+        for key in ('condition_group_id', 'condition_device_id', 'condition_device_group_id')
+    })
+    scope = policy_scope.resolve_scope(proposed, 'tacacs', config_compiler._scope_inventory(db))
+    if not scope.deployable:
+        reject([d.to_dict() for d in scope.diagnostics])
 
     policy.description = snapshot.get("description")
     policy.enabled = snapshot.get("enabled", True)

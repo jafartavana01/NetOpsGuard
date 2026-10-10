@@ -73,8 +73,17 @@ def dashboard_page(
         all_modules(), is_superadmin=admin.is_superadmin,
         licensed_module_keys=_licensed_module_keys(),
     )
+    # Presentation only: expose effective visibility without changing API RBAC.
+    from ..database import get_sessionmaker
+    from .dashboard_context import dashboard_capabilities
+    try:
+        with get_sessionmaker()() as db:
+            capabilities = dashboard_capabilities(admin, db)
+    except Exception:
+        capabilities = {}  # Unknown permissions never expose privileged shortcuts.
+
     return templates.TemplateResponse(
         request,
         "dashboard.html",
-        {"admin_username": admin.username, "dashboard_item": dashboard_item, "nav_sections": nav_sections, "is_superadmin": admin.is_superadmin},
+        {"admin_username": admin.username, "dashboard_item": dashboard_item, "nav_sections": nav_sections, "is_superadmin": admin.is_superadmin, "dashboard_capabilities": capabilities},
     )

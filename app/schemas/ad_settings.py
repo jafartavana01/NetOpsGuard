@@ -10,10 +10,18 @@ TacacsUserUpdate.password.
 """
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+import re
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class AdSettingsUpdate(BaseModel):
+    @field_validator('group_prefix')
+    @classmethod
+    def literal_prefix(cls, value):
+        if value is not None and not re.fullmatch(r'[A-Za-z0-9 _-]*', value):
+            raise ValueError('Group prefix must contain only literal ASCII letters, digits, spaces, underscores and hyphens; regex metacharacters are unsupported.')
+        return value
+
     enabled: bool = False
     host: str = Field(default="", max_length=255)
     port: int = Field(default=389, ge=1, le=65535)

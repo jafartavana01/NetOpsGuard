@@ -15,11 +15,17 @@
   <link rel="apple-touch-icon" href="/static/favicon.svg">
   <meta name="theme-color" content="#0d1117">
 
+  <link rel="stylesheet" href="/static/css/gui-v2/tokens.css">
   <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/gui-v2/base.css">
+  <link rel="stylesheet" href="/static/css/gui-v2/layout.css">
+  <link rel="stylesheet" href="/static/css/gui-v2/components.css">
+  <link rel="stylesheet" href="/static/css/gui-v2/utilities.css">
 </head>
 <body class="{% block body_class %}{% endblock %}">
   {% block content %}{% endblock %}
   <script src="/static/js/app.js"></script>
+  <script src="/static/js/gui-components.js"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

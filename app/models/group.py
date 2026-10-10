@@ -25,7 +25,7 @@ it's a trap for a future change to silently start trusting again.
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, String, Text
+from sqlalchemy import CheckConstraint, ForeignKey, DateTime, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -38,6 +38,19 @@ def _utcnow() -> datetime:
 
 class TacacsGroup(Base):
     __tablename__ = "tacacs_groups"
+    __table_args__ = (
+        CheckConstraint("authority IN ('LEGACY', 'EXTERNAL')", name="ck_group_authority"),
+        CheckConstraint("(authority = 'LEGACY' AND external_source_id IS NULL) OR "
+                        "(authority = 'EXTERNAL' AND external_source_id IS NOT NULL "
+                        "AND ad_group_name IS NOT NULL AND length(trim(ad_group_name)) > 0)",
+                        name="ck_group_external_binding"),
+    )
+
+    # LEGACY preserves prior shared-runtime behavior; it does not assert LOCAL authority.
+    authority: Mapped[str] = mapped_column(String(16), nullable=False, default="LEGACY", server_default="LEGACY")
+    external_source_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ad_settings.id", ondelete="RESTRICT", name="fk_group_external_source"), nullable=True)
+
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 

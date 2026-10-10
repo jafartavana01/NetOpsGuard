@@ -29,6 +29,8 @@ class CandidateOut(BaseModel):
     candidate: str
     active: str
     uncompilable_policies: list[dict] = []
+    applicable: bool = True
+    diagnostics: list[dict] = []
 
 
 class ApplyRequest(BaseModel):
@@ -63,20 +65,15 @@ def get_candidate(
     _admin: AdminUser = Depends(require_permission("config:view")),
 ):
     active = config_compiler.get_active_config()
-    candidate = config_compiler.compile_candidate(db)
+    try:
+        candidate = config_compiler.compile_candidate(db)
+    except config_compiler.UncompilablePolicyError as exc:
+        return CandidateOut(has_changes=False, diff="", candidate="", active=active,
+                            applicable=False, diagnostics=exc.diagnostics)
     diff = config_compiler.compute_diff(active, candidate)
-    # Surfaced here, not only at actual apply time (see /apply below) --
-    # a policy that's excluded from compilation contributes NOTHING to
-    # the candidate text, so if it's the ONLY pending change, `diff`
-    # comes back empty and the admin would otherwise never learn why
-    # their new/edited policy never shows up as a pending change at
-    # all, since they'd never even reach the Apply step to see the
-    # recorded exclusion event.
-    uncompilable = config_compiler.get_uncompilable_policies(db)
-    return CandidateOut(
-        has_changes=bool(diff), diff=diff, candidate=candidate, active=active,
-        uncompilable_policies=[{"name": p.name, "reason": reason} for p, reason in uncompilable],
-    )
+    return CandidateOut(has_changes=bool(diff), diff=diff, candidate=candidate,
+                        active=active, applicable=True, diagnostics=[])
+
 
 
 @router.post("/apply", response_model=VersionOut, dependencies=[Depends(verify_csrf)])
@@ -85,25 +82,17 @@ def apply_config(
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(require_permission("config:apply")),
 ):
-    candidate = config_compiler.compile_candidate(db)
+    try:
+        candidate = config_compiler.compile_candidate(db)
+    except config_compiler.UncompilablePolicyError as exc:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail={"code": "invalid_policy_scope", "message": str(exc),
+                    "applicable": False, "diagnostics": exc.diagnostics},
+        ) from None
     active = config_compiler.get_active_config()
     if candidate == active:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="No pending changes to apply.")
-
-    # Any policy on the new condition-tree model that couldn't be
-    # safely compiled (see config_compiler.UncompilablePolicyError)
-    # was already silently excluded from `candidate` above -- this is
-    # the one point (an actual apply, not every candidate preview)
-    # where that exclusion becomes a recorded, auditable InstallEvent
-    # rather than a gap nobody would ever see.
-    uncompilable = config_compiler.get_uncompilable_policies(db)
-    for policy, reason in uncompilable:
-        db.add(InstallEvent(
-            event_type="policy_excluded_from_config",
-            detail=f"Policy '{policy.name}' excluded from the generated configuration: {reason}",
-        ))
-    if uncompilable:
-        db.commit()
 
     try:
         version = config_compiler.apply_candidate(

@@ -42,7 +42,7 @@ from ..models.policy_condition import PolicyCondition
 from ..models.policy_condition_group import PolicyConditionGroup
 from ..models.system_info import InstallEvent
 from ..models.user import TacacsUser
-from . import build_info_service, condition_engine, policy_engine, service_control
+from . import build_info_service, condition_engine, policy_engine, service_control, policy_scope
 
 ACTIVE_CONFIG_PATH = GENERATED_DIR / "tac_plus-ng.conf"
 
@@ -105,20 +105,10 @@ class ConfigCompilerError(RuntimeError):
 
 
 class UncompilablePolicyError(RuntimeError):
-    """
-    Raised when a policy's condition tree contains something with no
-    confirmed tac_plus-ng syntax to compile it into -- per the pasted
-    condition-builder spec's explicit "if something cannot be
-    represented safely in tac_plus-ng, do NOT fake it" instruction.
-    The caller (compile_candidate) catches this PER POLICY and
-    excludes just that one policy from the generated ruleset entirely
-    -- it simply never matches anything in the compiled config, which
-    is the safe, deny-leaning failure mode this project has used
-    consistently since Phase 5, not a silently-wrong or partially-fake
-    compilation. compile_candidate() also records an InstallEvent for
-    every exclusion, so this is auditable, not a silent gap.
-    """
-    pass
+    """An invalid policy blocks the entire database-derived candidate."""
+    def __init__(self, message: str, diagnostics=None):
+        super().__init__(message)
+        self.diagnostics = list(diagnostics or [])
 
 
 class ApplyFailedError(RuntimeError):
@@ -198,7 +188,7 @@ def _mavis_block(settings: AdSettings | None, *, radius_enabled: bool = False) -
     if settings.bind_password_encrypted:
         password = security.decrypt_secret(settings.bind_password_encrypted)
 
-    lines = ["    mavis module = external {"]
+    lines = [f"    mavis module {policy_scope.external_source_name(settings.id)} = external {{"]
     lines.append('        setenv LDAP_SERVER_TYPE = "microsoft"')
     scheme = "ldaps" if settings.use_tls else "ldap"
     lines.append(f'        setenv LDAP_HOSTS = "{scheme}://{settings.host}:{settings.port}"')
@@ -630,8 +620,8 @@ def _condition_expression(
     device_names_by_group_id: dict,
 ) -> str | None:
     """
-    LEGACY model only (see resolve_condition_expression below for the
-    dispatch between this and the new condition-tree compiler).
+    Retained legacy expression helper. Deployment uses policy_scope validation
+    and _render_scope; this helper also rejects unresolved map references.
     Translates a Policy's condition_* fields (PAM Expansion Plan §4)
     into a tac_plus-ng script boolean expression, combining multiple
     conditions on the same policy with `&&`. Returns None when the
@@ -650,19 +640,22 @@ def _condition_expression(
 
     if policy.condition_group_id is not None:
         group_name = group_names_by_id.get(policy.condition_group_id)
-        if group_name:
-            clauses.append(f"member == {group_name}")
+        if not group_name:
+            raise UncompilablePolicyError("Unresolved identity-group restriction.")
+        clauses.append(f"member == {group_name}")
 
     if policy.condition_device_id is not None:
         device_name = device_names_by_id.get(policy.condition_device_id)
-        if device_name:
-            clauses.append(f"device == {device_name}")
+        if not device_name:
+            raise UncompilablePolicyError("Unresolved device restriction.")
+        clauses.append(f"device == {device_name}")
 
     if policy.condition_device_group_id is not None:
         member_device_names = device_names_by_group_id.get(policy.condition_device_group_id, [])
-        if member_device_names:
-            or_chain = " || ".join(f"device == {name}" for name in member_device_names)
-            clauses.append(f"({or_chain})" if len(member_device_names) > 1 else or_chain)
+        if not member_device_names:
+            raise UncompilablePolicyError("Empty or unresolved device-group restriction.")
+        or_chain = " || ".join(f"device == {name}" for name in member_device_names)
+        clauses.append(f"({or_chain})" if len(member_device_names) > 1 else or_chain)
 
     if not clauses:
         return None
@@ -780,7 +773,7 @@ def _compile_condition_group_tree(
     `!` has no confirmed tac_plus-ng syntax the way `&&`/`||`/`==`/`!=`
     now do -- a NOT group anywhere in the tree makes the WHOLE policy
     uncompilable (see UncompilablePolicyError's docstring for what
-    that means in practice: excluded from the ruleset, not faked).
+    that means in practice: the candidate is rejected, not partially emitted).
     """
     child_conditions = (
         db.query(PolicyCondition).filter(PolicyCondition.group_id == group.id).order_by(PolicyCondition.order.asc()).all()
@@ -825,42 +818,99 @@ def _compile_condition_group_tree(
     raise UncompilablePolicyError(f"Unknown logical operator '{group.logical_operator}'.")
 
 
+def _scope_inventory(db: Session):
+    ad = db.query(AdSettings).first()
+    return policy_scope.ScopeInventory(
+        devices=db.query(NetworkDevice).all(),
+        device_groups=db.query(DeviceGroup).all(),
+        identity_groups=db.query(TacacsGroup).all(),
+        users=db.query(TacacsUser).all(),
+        tree_groups=db.query(PolicyConditionGroup).all(),
+        conditions=db.query(PolicyCondition).all(),
+        external_identity_enabled=bool(ad and ad.enabled),
+        external_sources=db.query(AdSettings).all(),
+    )
+
+
+def _require_scope(scope):
+    if not scope.deployable:
+        raise UncompilablePolicyError(
+            "Enabled policy scope is invalid; configuration cannot be applied.",
+            [d.to_dict() for d in scope.diagnostics],
+        )
+    return scope
+
+
+def _render_scope(scope, acl_blocks_out):
+    _require_scope(scope)
+    if scope.state == policy_scope.ScopeState.UNRESTRICTED:
+        return None
+
+    def render(node):
+        if node.kind in ('AND', 'OR'):
+            parts = [render(child) for child in node.children]
+            expression = (' && ' if node.kind == 'AND' else ' || ').join(parts)
+            return '(' + expression + ')' if node.kind == 'OR' else expression
+        if node.kind == 'source_ip':
+            if node.operator in ('equal', 'not_equal'):
+                return f"nac {'==' if node.operator == 'equal' else '!='} {node.value}"
+            name = 'acl_cond_' + node.object_id.replace('-', '')[:12]
+            acl_blocks_out.append(f"    acl {name} {{ if (nac == {node.value}) permit deny }}\n")
+            return f"acl {'==' if node.operator == 'is_in_cidr' else '!='} {name}"
+        if node.kind == 'identity_source':
+            return f'identity-source == {node.value}'
+        if node.kind == 'aaa_protocol':
+            return f'aaa.protocol == {node.value}'
+        field = 'member' if node.kind == 'user_group' else 'device'
+        return f"{field} {'==' if node.operator == 'equal' else '!='} {node.value}"
+
+    return render(scope.predicate)
+
+
+def _validate_scopes(db: Session):
+    """Resolve both protocols before rendering anything; return frozen predicates."""
+    from ..models.radius_policy import RadiusPolicy
+    inventory = _scope_inventory(db)
+    policies = policy_engine.get_ordered_policies(db)
+    radius_policies = (db.query(RadiusPolicy).filter(RadiusPolicy.enabled.is_(True))
+                       .order_by(RadiusPolicy.priority.asc(), RadiusPolicy.created_at.asc()).all())
+    results = {}
+    diagnostics = []
+    for protocol, rows in (('tacacs', policies), ('radius', radius_policies)):
+        for policy in rows:
+            result = policy_scope.resolve_scope(policy, protocol, inventory)
+            results[(protocol, policy.id)] = result
+            diagnostics.extend(d.to_dict() for d in result.diagnostics)
+    # Device access overrides precede policies and still use shared-runtime
+    # member predicates. Do not silently reuse an EXTERNAL group on that path.
+    # Supporting source-aware overrides is outside this positive-policy increment.
+    external_groups = {g.id: g for g in inventory.identity_groups
+                       if getattr(g, 'authority', 'LEGACY') == 'EXTERNAL'}
+    for grant in db.query(DeviceAccessGrant).all():
+        group = external_groups.get(grant.user_group_id)
+        if group is not None:
+            diagnostics.append(policy_scope.ScopeDiagnostic(
+                str(grant.id), 'Device access override for ' + group.name, 'tacacs',
+                'user_group', 'user_group', str(group.id),
+                'scope.external_override_unsupported', f'overrides[{grant.id}].user_group_id',
+                'Device access overrides use shared-runtime membership and cannot reference EXTERNAL authority. '
+                'Replace this override with a supported positive TACACS+ policy before applying.'
+            ).to_dict())
+    if diagnostics:
+        raise UncompilablePolicyError(
+            "Enabled policies have invalid scope. Resolve all diagnostics before applying.", diagnostics)
+    return results, policies, radius_policies
+
+
 def resolve_condition_expression(
-    db: Session,
-    policy: Policy,
-    *,
-    group_names_by_id: dict,
-    device_names_by_id: dict,
-    device_names_by_group_id: dict,
+    db: Session, policy: Policy, *, group_names_by_id: dict,
+    device_names_by_id: dict, device_names_by_group_id: dict,
     acl_blocks_out: list[str],
 ) -> str | None:
-    """
-    The single dispatch point between the legacy flat-field model and
-    the new condition-tree model for compilation -- the SAME switch
-    app.services.policy_engine.evaluate() uses for evaluation
-    (condition_engine.has_condition_tree()), so a policy is compiled
-    using the identical model it's evaluated/simulated under; the two
-    can never diverge on which model a given policy is using. Can
-    raise UncompilablePolicyError for a tree-model policy -- the
-    caller (compile_candidate) must catch this per policy.
-    """
-    if condition_engine.has_condition_tree(db, policy):
-        root = condition_engine.get_root_group(db, policy)
-        if root is None:
-            raise UncompilablePolicyError("This policy's condition tree is missing its root group.")
-        return _compile_condition_group_tree(
-            db, root,
-            group_names_by_id=group_names_by_id,
-            device_names_by_id=device_names_by_id,
-            device_names_by_group_id=device_names_by_group_id,
-            acl_blocks_out=acl_blocks_out,
-        )
-    return _condition_expression(
-        policy,
-        group_names_by_id=group_names_by_id,
-        device_names_by_id=device_names_by_id,
-        device_names_by_group_id=device_names_by_group_id,
-    )
+    # Retain the public signature for callers, but resolve from inventory rather
+    # than interpreting failed map lookups as unrestricted scope.
+    scope = policy_scope.resolve_scope(policy, 'tacacs', _scope_inventory(db))
+    return _render_scope(scope, acl_blocks_out)
 
 
 _DEVICE_OVERRIDE_PROFILE_NAME = "device_override_full_access"
@@ -951,9 +1001,9 @@ def _ruleset_block(
     {}` block containing one named `rule <name> { }` per policy, each
     with its own `script`. `policies_with_conditions` must already be
     in the exact order evaluation should walk them (see
-    app.services.policy_engine.get_ordered_policies) and already
-    exclude any policy resolve_condition_expression() couldn't compile
-    -- this function only renders, it doesn't decide what's compilable.
+    app.services.policy_engine.get_ordered_policies). Every enabled policy
+    must have passed scope validation; an invalid policy rejects the entire
+    candidate. This function only renders the validated selectors.
 
     `override_rule_texts` (device access grants -- see
     app.models.device_access_grant) are rendered FIRST, before every
@@ -996,54 +1046,21 @@ def _ruleset_block(
 
 
 def get_uncompilable_policies(db: Session) -> list[tuple[Policy, str]]:
-    """
-    Read-only check: which enabled policies would be excluded from
-    the ruleset if compiled right now, and why. Shares the exact same
-    resolve_condition_expression() logic compile_candidate() uses
-    internally, so this can never disagree with what actually gets
-    excluded. Exists as its own callable (rather than folded silently
-    into compile_candidate(), which is documented and relied upon as
-    a pure function with no side effects) specifically so callers that
-    DO want to act on this -- apply_candidate() recording an
-    InstallEvent, or a future Diagnostics page warning -- can, without
-    every plain candidate-preview call (the GET /candidate endpoint,
-    the Simulator, diagnostics' "would_change" check) picking up an
-    unexpected write.
-    """
-    groups = db.query(TacacsGroup).all()
-    group_names_by_id = {g.id: g.name for g in groups}
-    all_devices = db.query(NetworkDevice).all()
-    device_names_by_id = {d.id: d.name for d in all_devices}
-    device_names_by_group_id: dict = {}
-    for d in all_devices:
-        if d.device_group_id is not None:
-            device_names_by_group_id.setdefault(d.device_group_id, []).append(d.name)
+    """Compatibility report; includes both protocols, never authorizes omission."""
+    from ..models.radius_policy import RadiusPolicy
+    inventory = _scope_inventory(db)
+    rows = [('tacacs', p) for p in policy_engine.get_ordered_policies(db)]
+    rows += [('radius', p) for p in db.query(RadiusPolicy).filter(RadiusPolicy.enabled.is_(True)).all()]
+    return [(p, '; '.join(d.reason for d in result.diagnostics))
+            for protocol, p in rows
+            for result in [policy_scope.resolve_scope(p, protocol, inventory)]
+            if not result.deployable]
 
-    excluded = []
-    for policy in policy_engine.get_ordered_policies(db):
-        try:
-            resolve_condition_expression(
-                db, policy,
-                group_names_by_id=group_names_by_id,
-                device_names_by_id=device_names_by_id,
-                device_names_by_group_id=device_names_by_group_id,
-                acl_blocks_out=[],  # discarded -- this call is for the exclusion check only
-            )
-        except UncompilablePolicyError as exc:
-            excluded.append((policy, str(exc)))
-    return excluded
 
 
 def compile_candidate(db: Session) -> str:
-    """Pure function of DB state: same devices/users/groups/policies
-    in, same config text out, every time -- which is what makes
-    diffing meaningful. A policy whose condition tree can't be safely
-    compiled (see resolve_condition_expression / UncompilablePolicyError)
-    is silently excluded from the OUTPUT here -- "silently" only in the
-    sense that this function itself never writes anything (it's pure);
-    see get_uncompilable_policies() for how a caller gets visibility
-    into exactly which policies and why, and apply_candidate() below
-    for where that visibility becomes an actual recorded InstallEvent."""
+    """Build a complete candidate or reject it; invalid policies are never omitted."""
+    scope_results, all_policies, radius_policies = _validate_scopes(db)
     devices = (
         db.query(NetworkDevice)
         .filter(NetworkDevice.enabled.is_(True))
@@ -1074,21 +1091,11 @@ def compile_candidate(db: Session) -> str:
         if d.device_group_id is not None:
             device_names_by_group_id.setdefault(d.device_group_id, []).append(d.name)
 
-    all_policies = policy_engine.get_ordered_policies(db)
 
     acl_blocks_out: list[str] = []
     compilable_policies: list[tuple[Policy, str | None]] = []
     for policy in all_policies:
-        try:
-            condition = resolve_condition_expression(
-                db, policy,
-                group_names_by_id=group_names_by_id,
-                device_names_by_id=device_names_by_id,
-                device_names_by_group_id=device_names_by_group_id,
-                acl_blocks_out=acl_blocks_out,
-            )
-        except UncompilablePolicyError:
-            continue  # excluded -- see get_uncompilable_policies() for why, callers that need to know check that separately
+        condition = _render_scope(scope_results[('tacacs', policy.id)], acl_blocks_out)
         compilable_policies.append((policy, condition))
 
     # Device access grants (app.models.device_access_grant) -- emitted
@@ -1135,7 +1142,7 @@ def compile_candidate(db: Session) -> str:
     # their profiles are guarded by `aaa.protocol == radius`, so mixing
     # them into that function would blur two things that must stay
     # separately reviewable.
-    radius_profiles, radius_rules = _radius_policy_blocks(db)
+    radius_profiles, radius_rules = _radius_policy_blocks(db, scope_results=scope_results, policies=radius_policies)
 
     # Lockout rules go FIRST in the override list so they are emitted
     # ahead of every policy: tac_plus-ng takes the first matching rule,
@@ -1437,7 +1444,7 @@ def _rollback(db: Session, previous_content: str, *, reason: str) -> None:
         db.rollback()
 
 
-def _radius_policy_blocks(db) -> tuple[str, str]:
+def _radius_policy_blocks(db, *, scope_results=None, policies=None) -> tuple[str, str]:
     """
     Generates the profile and ruleset entries for RADIUS policies.
 
@@ -1463,18 +1470,17 @@ def _radius_policy_blocks(db) -> tuple[str, str]:
     """
     from ..models.radius_policy import RadiusPolicy, RadiusPolicyAttribute
 
-    policies = (
-        db.query(RadiusPolicy)
-        .filter(RadiusPolicy.enabled.is_(True))
-        .order_by(RadiusPolicy.priority.asc(), RadiusPolicy.created_at.asc())
-        .all()
-    )
+    if policies is None:
+        policies = (db.query(RadiusPolicy).filter(RadiusPolicy.enabled.is_(True))
+                    .order_by(RadiusPolicy.priority.asc(), RadiusPolicy.created_at.asc()).all())
     if not policies:
         return "", ""
-
-    group_names = {g.id: g.name for g in db.query(TacacsGroup).all()}
-    device_names = {d.id: d.name for d in db.query(NetworkDevice).all()}
-    device_group_names = {g.id: g.name for g in db.query(DeviceGroup).all()}
+    if scope_results is None:
+        inventory = _scope_inventory(db)
+        scope_results = {('radius', p.id): policy_scope.resolve_scope(p, 'radius', inventory) for p in policies}
+    # Validate all before emitting any profile or selector, including direct callers.
+    for policy in policies:
+        _require_scope(scope_results[('radius', policy.id)])
 
     profiles, rules = [], []
 
@@ -1513,21 +1519,7 @@ def _radius_policy_blocks(db) -> tuple[str, str]:
 
         # Matching rule. Conditions use the same `member ==` /
         # `device ==` vocabulary already proven by the TACACS+ ruleset.
-        clauses = []
-        if policy.condition_group_id and policy.condition_group_id in group_names:
-            clauses.append(f"member == {group_names[policy.condition_group_id]}")
-        if policy.condition_device_id and policy.condition_device_id in device_names:
-            clauses.append(f"device == {device_names[policy.condition_device_id]}")
-        if policy.condition_device_group_id and policy.condition_device_group_id in device_group_names:
-            members = [
-                d.name for d in db.query(NetworkDevice).filter(
-                    NetworkDevice.device_group_id == policy.condition_device_group_id
-                ).all()
-            ]
-            if members:
-                clauses.append("(" + " || ".join(f"device == {n}" for n in members) + ")")
-
-        condition = " && ".join(clauses) if clauses else None
+        condition = _render_scope(scope_results[('radius', policy.id)], [])
         rule = [f"        rule rad_{policy.name} {{", "            enabled = yes", "            script {"]
         if condition:
             rule.extend([
@@ -1538,9 +1530,8 @@ def _radius_policy_blocks(db) -> tuple[str, str]:
             ])
         else:
             # No conditions means "every RADIUS request", which is a
-            # legitimate catch-all -- but it is still guarded by the
-            # profile's own aaa.protocol check, so it cannot affect
-            # TACACS+.
+            # validated legacy catch-all. Protocol and Service-Type guards
+            # remain in the profile; native fallthrough semantics are unchanged.
             rule.extend([
                 f"                profile = rad_{policy.name}",
                 "                permit",

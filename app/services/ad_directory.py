@@ -52,7 +52,7 @@ class AdSearchResult:
     into a bare `[]`, identical to a real "nothing matched." That
     made a genuine misconfiguration indistinguishable from a correct
     search that found nothing, directly confirmed by a real report:
-    a user's own memberOf correctly named a group ("tacpalasGroup"),
+    a user's own memberOf correctly named a group ("ExampleGroup"),
     but searching for that exact name returned "No matches" -- with
     no way to tell whether that was because the group doesn't exist
     where search_base looks, or because the search itself silently
@@ -157,7 +157,7 @@ def _warn_if_domain_name_used_as_host(settings: AdSettings) -> str | None:
     """
     Returns a warning if `host` looks like a bare AD DOMAIN name
     rather than a specific domain controller's FQDN -- e.g.
-    "tacplas.local" instead of "dc01.tacplas.local".
+    "example.test" instead of "dc01.example.test".
 
     This matters specifically for LDAPS: a DC's certificate has its
     own FQDN in the Subject/SAN (a confirmed Windows Server 2025

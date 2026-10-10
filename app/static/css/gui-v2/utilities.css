@@ -1,0 +1,10 @@
+.stack { display:flex; flex-direction:column; gap:var(--space-4); }
+.cluster { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-3); }
+.push-end { margin-left:auto; }
+.text-muted { color:var(--text-muted); }
+.text-success { color:var(--success); }
+.text-warning { color:var(--warning); }
+.text-danger { color:var(--danger); }
+.text-info { color:var(--info); }
+.metric-value { font:650 var(--type-metric)/1.2 var(--font-ui); font-variant-numeric:tabular-nums; }
+.full-width { width:100%; }

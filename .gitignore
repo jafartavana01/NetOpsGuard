@@ -1,0 +1,59 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+db_credentials.json
+session_secret.key
+secret_encryption.key
+# Runtime outputs
+*.log
+*.db
+*.sqlite
+*.sqlite3
+*.db-*
+/backups/
+/generated/
+/runtime/
+/build_info.json
+# Python / test artifacts
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage*
+htmlcov/
+coverage.xml
+*.egg-info/
+# Browser / regression evidence
+node_modules/
+playwright-report/
+test-results/
+docs/atomic-policy/
+docs/restoration-fix/
+docs/gui01/screenshots/
+docs/gui01/regression/
+docs/gui01/*results.json
+docs/gui02/screenshots/
+docs/gui02/*results.json
+tests/f03/results.json
+tests/f03/phase*-results/
+# Local delivery and editor files
+*.zip
+*.tar
+*.tar.gz
+*.patch
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# Customer licence/request exports
+*.license
+*.request

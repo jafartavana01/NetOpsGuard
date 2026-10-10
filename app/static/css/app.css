@@ -8,33 +8,7 @@
   link-state LEDs rather than generic success/warning colors.
 */
 
-:root {
-  --bg-void: #0b0e11;
-  --bg-panel: #12161b;
-  --bg-panel-raised: #161b21;
-  --bg-input: #1c222a;
-  --line: #232932;
-  --line-soft: #1a1f26;
-  --line-bright: #3a4350;
-
-  --text-primary: #e6eaee;
-  --text-dim: #8a94a0;
-  --text-faint: #57616c;
-
-  --signal: #4fd1a5;
-  --signal-dim: #245c48;
-  --amber: #e0a83e;
-  /* Sits deliberately between --amber and --red: the Security Center's
-     severity scale needs Critical and High to be distinguishable from
-     each other AND from Medium, which two colours alone can't do. */
-  --orange: #e08542;
-  --red: #e0615a;
-
-  --font-ui: -apple-system, "Segoe UI", ui-sans-serif, Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: ui-monospace, "JetBrains Mono", "Cascadia Code", "SF Mono", Consolas, "Liberation Mono", monospace;
-
-  --radius: 2px;
-}
+/* Shared tokens moved to gui-v2/tokens.css; feature styles below remain compatible. */
 
 * { box-sizing: border-box; }
 

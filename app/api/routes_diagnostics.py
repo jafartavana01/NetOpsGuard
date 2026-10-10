@@ -41,11 +41,11 @@ def diagnostics_overview(
             s = service_control.get_status(unit)
             services[unit] = {"active_state": s.active_state, "sub_state": s.sub_state, "enabled": s.enabled}
         except service_control.ServiceControlError as exc:
-            services[unit] = {"error": str(exc)}
+            services[unit] = {"error": "Service status is unavailable."}
 
     return {
         "services": services,
-        "build_info": build_info_service.get_build_info(),
+        "build_info": build_info_service.get_public_build_info(),
     }
 
 
@@ -59,7 +59,7 @@ def service_log(
     try:
         return {"unit": unit, "content": service_control.recent_logs(unit)}
     except service_control.ServiceControlError as exc:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail="Service logs are unavailable. Check the service on the server.")
 
 
 @router.get("/audit-events")
@@ -111,7 +111,12 @@ def validate_config_now(
     config_compiler.validate_candidate's docstring for what "definitive"
     means and why it's now trusted enough to block on).
     """
-    candidate = config_compiler.compile_candidate(db)
+    try:
+        candidate = config_compiler.compile_candidate(db)
+    except config_compiler.UncompilablePolicyError as exc:
+        return {"would_change": False, "applicable": False, "validated": False,
+                "definitively_failed": True, "output": str(exc),
+                "diagnostics": exc.diagnostics}
     active = config_compiler.get_active_config()
     validation = config_compiler.validate_candidate(candidate)
     return {

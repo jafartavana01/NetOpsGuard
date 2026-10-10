@@ -18,3 +18,14 @@ def get_build_info() -> dict:
         }
     info["status"] = "recorded"
     return info
+
+
+def get_public_build_info() -> dict:
+    """Operator metadata only; raw install details remain available internally."""
+    info = get_build_info()
+    fields = ('status', 'commit', 'build_date_utc', 'build_profile',
+              'features_detected_enabled', 'features_detected_disabled')
+    result = {key: info[key] for key in fields if key in info}
+    if result.get('status') == 'unavailable':
+        result['message'] = 'Build information is unavailable.'
+    return result

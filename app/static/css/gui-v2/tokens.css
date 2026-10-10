@@ -1,0 +1,26 @@
+/* GUI v2 source of truth. Legacy aliases keep unmigrated pages compatible. */
+:root {
+  color-scheme: dark;
+  --bg-app:#0c121b; --bg-sidebar:#101822; --bg-surface:#141e2a;
+  --bg-surface-raised:#1a2635; --bg-input:#101a26; --bg-hover:#1d2b3b; --bg-selected:#16332f;
+  --border-subtle:#243140; --border-default:#344456; --border-strong:#53687d;
+  --text-primary:#edf3f8; --text-secondary:#b3c1d0; --text-muted:#91a3b7; --text-disabled:#728296;
+  --accent-primary:#45d6b0; --success:#62dfb5; --success-bg:#123c30;
+  --info:#83bcff; --info-bg:#182f4b; --warning:#f0c16b; --warning-bg:#3b301c;
+  --danger:#ff9199; --danger-bg:#40252c;
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:20px;
+  --space-6:24px; --space-8:32px; --space-10:40px; --space-12:48px;
+  --radius-sm:4px; --radius-md:6px; --radius-lg:8px;
+  --font-ui:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --font-mono:ui-monospace,"Cascadia Code",Consolas,monospace;
+  --type-page:24px; --type-section:18px; --type-card:14px; --type-body:14px;
+  --type-secondary:13px; --type-label:12px; --type-caption:11px; --type-metric:26px;
+  --sidebar-width:244px; --sidebar-collapsed:68px; --topbar-height:58px;
+  --control-height:34px; --row-padding:10px 12px; --shadow-overlay:0 16px 48px #0006;
+  --bg-void:var(--bg-app); --bg-panel:var(--bg-surface); --bg-panel-raised:var(--bg-surface-raised);
+  --line:var(--border-subtle); --line-soft:var(--border-subtle); --line-bright:var(--border-strong);
+  --text-dim:var(--text-secondary); --text-faint:var(--text-muted);
+  --signal:var(--accent-primary); --signal-dim:#286a56; --amber:var(--warning); --orange:#f4aa73; --red:var(--danger);
+  --radius:var(--radius-sm);
+}
+[data-density="compact"] { --row-padding:6px 10px; --control-height:30px; }

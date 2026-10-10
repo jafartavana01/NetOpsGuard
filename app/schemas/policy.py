@@ -21,6 +21,8 @@ edits it.
 from __future__ import annotations
 
 import re
+from typing import Literal
+from .policy_condition import ConditionGroupInput
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -86,14 +88,47 @@ class PolicyBase(BaseModel):
         return self
 
 
-class PolicyCreate(PolicyBase):
-    command_set_ids: list[str] = Field(default_factory=list)
+class PolicyMutation(PolicyBase):
+    """A complete security state. Omissions cannot imply lost restrictions."""
+    model_config = ConfigDict(extra='forbid')
+    enabled: bool
+    priority: int = Field(ge=0, le=100000)
+    default_priv_lvl: int = Field(ge=0, le=15)
+    default_action: str
+    requires_manual_approval: bool
+    manual_default_command_set_id: str | None
+    command_set_ids: list[str]
+    scope_mode: Literal['unrestricted', 'legacy', 'tree']
+    condition_tree: ConditionGroupInput | None = None
     change_description: str | None = Field(default=None, max_length=500)
 
+    @model_validator(mode='after')
+    def complete_scope(self):
+        fields = ('condition_group_id', 'condition_device_id', 'condition_device_group_id')
+        if self.scope_mode == 'tree':
+            if self.condition_tree is None or any(getattr(self, f) is not None for f in fields):
+                raise ValueError('Tree scope requires a complete tree and no legacy conditions.')
+        elif self.condition_tree is not None:
+            raise ValueError('A condition tree requires tree scope mode.')
+        elif self.scope_mode == 'unrestricted':
+            if any(getattr(self, f) is not None for f in fields):
+                raise ValueError('Unrestricted scope cannot contain restrictions.')
+        else:
+            if not set(fields).issubset(self.model_fields_set):
+                raise ValueError('Legacy scope requires every dimension, using null only for intentional Any.')
+            if not any(getattr(self, f) is not None for f in fields):
+                raise ValueError('Use explicit unrestricted mode for an unrestricted policy.')
+        if any(getattr(self, f) == '' for f in fields):
+            raise ValueError('An empty reference is not intentional Any; use null explicitly.')
+        return self
 
-class PolicyUpdate(PolicyBase):
-    command_set_ids: list[str] = Field(default_factory=list)
-    change_description: str | None = Field(default=None, max_length=500)
+
+class PolicyCreate(PolicyMutation):
+    pass
+
+
+class PolicyUpdate(PolicyMutation):
+    pass
 
 
 class ReferencedCommandSet(BaseModel):

@@ -1,0 +1,44 @@
+{# Presentation mapping only. Never invent destinations or bypass the filtered server items. #}
+{% set gui_sections = [
+ ('access','Access Control','shield',['/tacacs/users','/tacacs/groups','/tacacs/devices','/tacacs/device-groups','/tacacs/policies','/tacacs/command-sets','/tacacs/command-categories','/tacacs/effective-access','/tacacs/policy-simulator']),
+ ('activity','Activity','activity',['/tacacs/sessions','/tacacs/access-events','/tacacs/accounting','/radius/accounting']),
+ ('operations','Network Operations','network',['/network-ops/jobs','/network-ops/templates']),
+ ('configuration','Configuration','database',['/ncm/overview','/ncm/archive','/ncm/compare','/ncm/diff','/ncm/drift','/ncm/changes','/ncm/jobs','/ncm/schedules']),
+ ('security','Security','shield-check',['/security/overview','/security/devices','/security/findings','/security/compliance','/security/reports','/security/schedule']),
+ ('system','System','settings',['/platform/active-directory','/tacacs/config','/tacacs/aaa-health','/tacacs/diagnostics','/platform/settings','/platform/admin-users','/platform/admin-roles','/platform/modules','/platform/license']),
+ ('radius','RADIUS','server',['/radius/overview','/radius/server','/radius/clients','/radius/policies','/radius/attributes'])
+] %}
+{% set nav_state = namespace(items=[], mapped=[]) %}
+{% for section in nav_sections %}{% set nav_state.items = nav_state.items + section.items %}{% endfor %}
+{% macro section_block(key,label,icon,items) %}
+{% if items %}
+{% set active = items | selectattr('path','equalto',request.url.path) | list | length > 0 %}
+<div class="nav-section {{ 'has-active' if active else 'is-collapsed' }}" data-section-key="{{ key }}">
+  <button type="button" class="nav-section-toggle" aria-controls="nav-section-{{ key }}" aria-expanded="{{ 'true' if active else 'false' }}" title="{{ label }}" aria-label="{{ label }}">
+    <span class="nav-section-toggle-label">{{ icons.icon(icon,17) }}<span>{{ label }}</span></span>
+    <span class="nav-section-chevron">{{ icons.icon('chevron-down',13) }}</span>
+  </button>
+  <div class="nav-section-items" id="nav-section-{{ key }}">
+    {% for item in items %}
+    <a class="nav-item nav-item-child {{ 'active' if request.url.path == item.path else '' }}" href="{{ item.path }}"
+       {% if request.url.path == item.path %}aria-current="page"{% endif %}
+       data-keywords="{{ (item.keywords + [item.label,label]) | join(' ') | lower }}"><span class="nav-dot" aria-hidden="true"></span>{{ item.label }}</a>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endmacro %}
+{% for key,label,icon,paths in gui_sections %}
+  {% set bucket=namespace(items=[]) %}
+  {% for path in paths %}
+    {% for item in nav_state.items if item.path == path %}{% set bucket.items=bucket.items+[item] %}{% endfor %}
+  {% endfor %}
+  {% set nav_state.mapped=nav_state.mapped+paths %}
+  {{ section_block(key,label,icon,bucket.items) }}
+{% endfor %}
+{# Unknown future destinations stay visible in their original server section. #}
+{% for section in nav_sections %}
+  {% set bucket=namespace(items=[]) %}
+  {% for item in section.items if item.path not in nav_state.mapped %}{% set bucket.items=bucket.items+[item] %}{% endfor %}
+  {{ section_block('extra-' + section.key,section.label,section.icon,bucket.items) }}
+{% endfor %}

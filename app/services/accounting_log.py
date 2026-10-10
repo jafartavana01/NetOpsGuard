@@ -162,7 +162,7 @@ def _parse_line(line: str, separator: str = ACCOUNTING_FIELD_SEPARATOR) -> Accou
     # all, so it silently fused onto the first real field's value
     # instead of being recognized as a separate prefix -- confirmed
     # directly from a real log where the "nas" field's value came back
-    # as "2026-09-03 08:02:18 +0000 192.168.44.10" instead of just the
+    # as "2026-09-03 08:02:18 +0000 192.0.2.10" instead of just the
     # real device address.
     ts_match = _TIMESTAMP_PATTERN.match(line)
     if ts_match:
@@ -694,7 +694,7 @@ def compute_health_and_failure_stats(records: list[AccountingRecord]) -> dict:
 #
 # Format confirmed against a real deployment:
 #
-#   2026-09-13 05:12:20 +0000 192.168.44.10\tjafar\ttty0\tasync\tshell login failed
+#   2026-09-13 05:12:20 +0000 192.0.2.10\toperator\ttty0\tasync\tshell login failed
 #
 #   ts  nas  user  port  rem_addr  <message>
 #

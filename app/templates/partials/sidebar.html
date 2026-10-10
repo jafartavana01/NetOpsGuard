@@ -14,13 +14,12 @@
   used): every section starts collapsed EXCEPT the one containing the
   current page, if any -- landing on Dashboard (which isn't inside any
   section) means every section renders collapsed, satisfying "all
-  collapsed by default on login." app_shell.html's own shell script
-  re-syncs this on every SPA navigation and enforces accordion
-  behavior (opening one section closes every other), restoring which
-  single section was last open from localStorage.
+  collapsed by default on login." gui-shell.js re-syncs active sections
+  on navigation and enforces accordion behavior. The overall collapsed
+  rail preference is persisted locally; search can expand matching groups.
 #}
 {% import "partials/icons.html" as icons %}
-<aside class="sidebar">
+<aside class="sidebar" id="app-sidebar" aria-label="Application navigation">
   <div class="brand brand-compact">
     <span class="brand-mark" aria-hidden="true"></span>
     <span class="brand-text">
@@ -35,41 +34,25 @@
     <kbd class="nav-search-kbd">Ctrl K</kbd>
   </div>
 
-  <nav class="nav" id="sidebar-nav">
+  <nav class="nav" id="sidebar-nav" aria-label="Main navigation">
     {% if dashboard_item %}
-    <a class="nav-item {{ 'active' if request.url.path == dashboard_item.path else '' }}" href="{{ dashboard_item.path }}">
-      {{ icons.icon(dashboard_item.icon or 'layout-dashboard', 16) }}{{ dashboard_item.label }}
+    <a class="nav-item nav-home {{ 'active' if request.url.path == dashboard_item.path else '' }}" href="{{ dashboard_item.path }}" title="{{ dashboard_item.label }}" aria-label="{{ dashboard_item.label }}" data-keywords="dashboard home overview">
+      {{ icons.icon(dashboard_item.icon or 'layout-dashboard', 18) }}<span class="nav-home-label">{{ dashboard_item.label }}</span>
     </a>
     {% endif %}
 
-    {% for section in nav_sections %}
-    {% set section_has_active = section.items | selectattr('path', 'equalto', request.url.path) | list | length > 0 %}
-    <div class="nav-section {{ '' if section_has_active else 'is-collapsed' }} {{ 'has-active' if section_has_active else '' }}" data-section-key="{{ section.key }}">
-      <button type="button" class="nav-section-toggle" aria-expanded="{{ 'true' if section_has_active else 'false' }}">
-        <span class="nav-section-toggle-label">{{ icons.icon(section.icon, 15) }}<span>{{ section.label }}</span></span>
-        <span class="nav-section-chevron" aria-hidden="true">{{ icons.icon('chevron-down', 13) }}</span>
-      </button>
-      <div class="nav-section-items">
-        {% for item in section.items %}
-        <a class="nav-item nav-item-child {{ 'active' if request.url.path == item.path else '' }}"
-           href="{{ item.path }}"
-           data-keywords="{{ (item.keywords + [item.label]) | join(' ') | lower }}">
-          <span class="nav-dot"></span>{{ item.label }}
-        </a>
-        {% endfor %}
-      </div>
-    </div>
-    {% endfor %}
+    {% include "partials/gui_navigation.html" %}
+    <p class="nav-empty" id="nav-empty" hidden>No matching destinations.</p>
   </nav>
 
   <div class="sidebar-footer">
-    <span class="dot dot-signal" id="daemon-dot"></span>
+    <span class="dot" id="daemon-dot"></span>
     <span id="daemon-label">tac_plus-ng — checking…</span>
   </div>
 </aside>
 
 <div class="cmdk-backdrop" id="cmdk-backdrop" hidden>
-  <div class="cmdk-panel">
+  <div class="cmdk-panel" role="dialog" aria-modal="true" aria-label="Find a destination">
     <div class="cmdk-input-row">
       <span class="nav-search-icon">{{ icons.icon('search', 15) }}</span>
       <input type="text" class="cmdk-input" id="cmdk-input" placeholder="Search pages…" aria-label="Search pages" autocomplete="off">

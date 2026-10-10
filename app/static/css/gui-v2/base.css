@@ -1,0 +1,16 @@
+/* Base typography and accessible primitives. No feature behavior. */
+html,body { background:var(--bg-app); color:var(--text-primary); font-family:var(--font-ui); }
+[hidden] { display:none !important; }
+:focus-visible { outline:2px solid var(--info); outline-offset:3px; }
+:disabled { cursor:not-allowed; opacity:.6; }
+::selection { background:var(--bg-selected); color:var(--text-primary); }
+h1,h2,h3,p { overflow-wrap:break-word; }
+.content-head h1,.dash-hero-title h1 { font-size:var(--type-page); line-height:1.25; font-weight:650; letter-spacing:-.5px; }
+.content-head h2 { font-size:var(--type-section); }
+.content-sub { font:400 var(--type-secondary)/1.55 var(--font-ui); color:var(--text-secondary); }
+.status-card-value,.dash-kpi-value,.dash-donut-value { font-family:var(--font-ui); font-variant-numeric:tabular-nums; }
+.cell-mono,code,pre,.technical { font-family:var(--font-mono); }
+.skip-link { position:fixed; z-index:12000; top:-80px; left:12px; padding:12px; background:var(--bg-surface-raised); color:var(--text-primary); }
+.skip-link:focus { top:12px; }
+.sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+@media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.01ms !important; transition-duration:.01ms !important; scroll-behavior:auto !important; } }

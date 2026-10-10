@@ -37,7 +37,8 @@ from ..models.group import TacacsGroup
 from ..models.policy import Policy
 from ..models.policy_command_set import PolicyCommandSet
 from ..schemas.policy import PolicyCreate, PolicyOut, PolicyUpdate, ReferencedCommandSet
-from ..services import condition_engine, policy_versioning
+from ..services import condition_engine, policy_versioning, config_compiler, policy_scope
+from ..models.policy_condition_group import PolicyConditionGroup
 from .deps import require_permission, verify_csrf
 
 router = APIRouter(prefix="/api/policies", tags=["policies"])
@@ -188,44 +189,77 @@ def list_policies(
     return [policy_to_out(db, p) for p in policies]
 
 
+def _mutate_policy(db: Session, payload, admin: AdminUser, *, policy_id: str | None):
+    """One authoritative write transaction; helpers may flush, never commit.
+
+    The dependency may already have begun a transaction for authentication.
+    Own its single commit/rollback rather than nesting a second transaction.
+    Construct/validate the response before commit so response-building failures
+    cannot leave a partially successful mutation.
+    """
+    from .routes_policy_conditions import _build_tree
+    try:
+        # Validate even internal callers; HTTP parsing uses the same contract.
+        payload = (PolicyCreate if policy_id is None else PolicyUpdate).model_validate(payload)
+        policy = None
+        if policy_id is not None:
+            try:
+                parsed = uuid.UUID(policy_id)
+            except ValueError:
+                raise HTTPException(404, detail='Policy not found.') from None
+            policy = db.query(Policy).filter(Policy.id == parsed).with_for_update().first()
+            if policy is None:
+                raise HTTPException(404, detail='Policy not found.')
+        group_id, device_id, device_group_id = _resolve_conditions(db, payload)
+        manual_cs_id = _resolve_manual_command_set(db, payload)
+        if policy is None or payload.priority != policy.priority:
+            _make_room_for_priority(db, payload.priority, exclude_id=policy.id if policy else None)
+        if policy is None:
+            policy = Policy()
+            db.add(policy)
+        for field in ('name', 'description', 'enabled', 'priority', 'default_priv_lvl',
+                      'default_action', 'requires_manual_approval'):
+            setattr(policy, field, getattr(payload, field))
+        policy.condition_group_id = group_id
+        policy.condition_device_id = device_id
+        policy.condition_device_group_id = device_group_id
+        policy.manual_default_command_set_id = manual_cs_id
+        db.flush()
+        command_sets = _replace_command_sets(db, policy, payload.command_set_ids)
+        # All groups for this policy, including malformed disconnected roots.
+        # PostgreSQL cascades delete their leaf nodes inside this transaction.
+        db.query(PolicyConditionGroup).filter(PolicyConditionGroup.policy_id == policy.id).delete(synchronize_session=False)
+        if payload.scope_mode == 'tree':
+            _build_tree(db, policy.id, None, 0, payload.condition_tree)
+        db.flush()
+        scope = policy_scope.resolve_scope(policy, 'tacacs', config_compiler._scope_inventory(db))
+        if not scope.deployable:
+            raise HTTPException(409, detail={'code': 'policy.mutation.invalid_scope',
+                'message': 'Policy was not saved. Resolve the scope errors and retry.',
+                'diagnostics': [d.to_dict() for d in scope.diagnostics]})
+        policy_versioning.record_version(db, policy, created_by=admin.username,
+            change_description=payload.change_description or ('Created' if policy_id is None else None))
+        db.flush()
+        response = policy_to_out(db, policy, command_sets)
+        db.commit()
+        return response
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, detail='Policy was not saved because a name, priority or reference conflicted. Reload and retry.') from None
+    except BaseException:
+        db.rollback()
+        raise
+
+
 @router.post("", response_model=PolicyOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(verify_csrf)])
 def create_policy(
     payload: PolicyCreate,
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(require_permission("policies:write")),
 ):
-    _make_room_for_priority(db, payload.priority)
-    group_id, device_id, device_group_id = _resolve_conditions(db, payload)
-    manual_cs_id = _resolve_manual_command_set(db, payload)
-
-    policy = Policy(
-        name=payload.name,
-        description=payload.description,
-        enabled=payload.enabled,
-        priority=payload.priority,
-        condition_group_id=group_id,
-        condition_device_id=device_id,
-        condition_device_group_id=device_group_id,
-        default_priv_lvl=payload.default_priv_lvl,
-        default_action=payload.default_action,
-        requires_manual_approval=payload.requires_manual_approval,
-        manual_default_command_set_id=manual_cs_id,
-    )
-    db.add(policy)
-    try:
-        db.flush()
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"A policy named '{payload.name}' already exists.")
-
-    command_sets = _replace_command_sets(db, policy, payload.command_set_ids)
-    policy_versioning.record_version(
-        db, policy, created_by=admin.username,
-        change_description=payload.change_description or "Created",
-    )
-    db.commit()
-    db.refresh(policy)
-    return policy_to_out(db, policy, command_sets)
+    if getattr(payload, 'scope_mode', None) is None:
+        raise HTTPException(400, detail='A complete atomic policy request with explicit scope mode is required.')
+    return _mutate_policy(db, payload, admin, policy_id=None)
 
 
 def _get_policy_or_404(db: Session, policy_id: str) -> Policy:
@@ -256,38 +290,10 @@ def update_policy(
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(require_permission("policies:write")),
 ):
-    policy = _get_policy_or_404(db, policy_id)
-    if payload.priority != policy.priority:
-        _make_room_for_priority(db, payload.priority, exclude_id=policy.id)
-    group_id, device_id, device_group_id = _resolve_conditions(db, payload)
-    manual_cs_id = _resolve_manual_command_set(db, payload)
+    if getattr(payload, 'scope_mode', None) is None:
+        raise HTTPException(400, detail='A complete atomic policy request with explicit scope mode is required.')
+    return _mutate_policy(db, payload, admin, policy_id=policy_id)
 
-    policy.name = payload.name
-    policy.description = payload.description
-    policy.enabled = payload.enabled
-    policy.priority = payload.priority
-    policy.condition_group_id = group_id
-    policy.condition_device_id = device_id
-    policy.condition_device_group_id = device_group_id
-    policy.default_priv_lvl = payload.default_priv_lvl
-    policy.default_action = payload.default_action
-    policy.requires_manual_approval = payload.requires_manual_approval
-    policy.manual_default_command_set_id = manual_cs_id
-
-    try:
-        db.flush()
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"A policy named '{payload.name}' already exists.")
-
-    command_sets = _replace_command_sets(db, policy, payload.command_set_ids)
-    policy_versioning.record_version(
-        db, policy, created_by=admin.username,
-        change_description=payload.change_description,
-    )
-    db.commit()
-    db.refresh(policy)
-    return policy_to_out(db, policy, command_sets)
 
 
 @router.post("/{policy_id}/command-sets/{command_set_id}", dependencies=[Depends(verify_csrf)])

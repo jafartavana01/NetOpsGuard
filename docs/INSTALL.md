@@ -7,8 +7,8 @@
   explicit confirmation to proceed anyway).
 - Root or sudo privileges.
 - Outbound Internet access **during installation only** (to clone
-  `github.com/MarcJHuber/event-driven-servers` and to install apt
-  packages). No Internet access is required at runtime.
+  `github.com/jafartavana01/GUi-event-driven-servers` and to install apt
+  packages). AAA runs locally; optional directory access, update checks and browser-hosted chart assets have their own connectivity requirements.
 - At least 5 GB free disk space and 1 GB RAM recommended.
 
 ## What gets installed
@@ -28,9 +28,9 @@
 ## Running the installer
 
 ```
-git clone <this project's repository>   # or copy the project directory to the server
-cd aaa-platform
-sudo python3 setup.py
+git clone https://github.com/jafartavana01/NetOpsGuard.git
+cd NetOpsGuard
+sudo bash bootstrap.sh
 ```
 
 The installer:
@@ -40,7 +40,7 @@ The installer:
    something looks unsupported.
 2. Installs apt dependencies (build tools + tac_plus-ng's documented
    prerequisites + PostgreSQL).
-3. Clones `event-driven-servers` and asks you to choose a build
+3. Clones the configured `GUi-event-driven-servers` fork of upstream tac_plus-ng and asks you to choose a build
    profile:
    - **Recommended** -- default `./configure tac_plus-ng`, auto-detects
      every optional feature your system supports (TLS, IPv6, RADIUS, DNS).
@@ -50,8 +50,7 @@ The installer:
      `./configure --help` output, never hard-coded.
 4. Builds and installs tac_plus-ng, and records the exact commit,
    build date, compiler, configure arguments, and detected features to
-   `/etc/aaa-platform/build_info.json` (visible later in the GUI under
-   System → Core Information).
+   `/etc/aaa-platform/build_info.json` (selected metadata is shown in the GUI; the complete record remains on the server).
 5. Provisions a local PostgreSQL role + database.
 6. Creates a least-privilege `aaa-platform` system account, installs
    the management application's Python dependencies **directly into
@@ -60,10 +59,9 @@ The installer:
 7. Creates the database schema and prompts you to create the first
    platform administrator account (password is never echoed or logged).
 8. Generates a default self-signed HTTPS certificate and writes the
-   default platform settings (HTTPS starts OFF -- see "Enabling HTTPS"
+   default platform settings (HTTPS defaults ON -- see "Enabling HTTPS"
    below).
-9. Writes a minimal bootstrap `tac_plus-ng.conf` (no devices/policies
-   yet -- that's Phase 2) so the daemon can actually start and be
+9. Writes a minimal bootstrap `tac_plus-ng.conf` (no device or policy inventory yet) so the daemon can actually start and be
    health-checked.
 10. Generates and starts two systemd services: `aaa-platform.service`
     (the management API/GUI, on `0.0.0.0:8420` -- reachable from your
@@ -72,8 +70,8 @@ The installer:
 
 ## After installation
 
-Open `http://<server-lan-ip>:8420` from any machine on the same LAN,
-or `http://127.0.0.1:8420` on the server itself.
+Open `https://<server-lan-ip>:8420` from any machine on the same LAN,
+or `https://127.0.0.1:8420` on the server itself.
 
 If Ubuntu's firewall is active, open the port first:
 
@@ -104,19 +102,14 @@ superadmin by default).
   your current connection to drop and to need to reconnect at the new
   address.
 - **Settings → HTTPS**: a self-signed certificate already exists from
-  install time (unused until you enable HTTPS above). Regenerate it
+  install time (used by the default HTTPS configuration). Regenerate it
   with your own CN/organization/validity period, or upload a
   certificate from your own CA. Enabling HTTPS without a valid
   certificate installed is refused outright rather than silently
   falling back to plain HTTP.
 
-No TLS is enabled by default -- login and every request are plain HTTP
-until you turn HTTPS on. That's fine for a trusted internal network you
-control; if you're on a shared or larger LAN, enabling HTTPS (even with
-the default self-signed certificate -- your browser will warn about it
-being unrecognized, which is expected and safe to accept for an
-internal tool you administer yourself) closes that gap without needing
-a separate reverse proxy.
+HTTPS defaults on in the current settings model. Verify the actual protocol after installation and replace or explicitly trust the self-signed certificate. If certificate files are missing and HTTPS was only inherited from defaults, the runner can warn and start HTTP; an explicitly enabled HTTPS setting with missing files refuses startup. Do not proceed with regular credential entry over HTTP.
+
 
 ## Known verification items
 

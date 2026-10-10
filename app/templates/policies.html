@@ -163,6 +163,7 @@
   <div class="modal modal-lg" style="max-width: 640px; max-height: 88vh">
     <button type="button" class="modal-close-btn" id="history-modal-close-btn" aria-label="Close">{{ icons.icon('x', 18) }}</button>
     <h2 id="history-modal-title">Version History</h2>
+    <div id="history-restore-error" class="alert-danger" role="alert" hidden></div>
     <div id="history-list"></div>
     <div class="modal-actions">
       <button type="button" class="btn-ghost" id="history-close-btn">Close</button>
@@ -985,6 +986,12 @@
       change_description: document.getElementById('policy-change-description').value || null,
     };
 
+    const intendedTree = currentConditionTree ||
+      ((msUserEntries.length > 0 || msDeviceEntries.length > 0)
+        ? msEntriesToConditionTree(msUserEntries, msDeviceEntries) : null);
+    payload.scope_mode = intendedTree ? 'tree' : 'unrestricted';
+    payload.condition_tree = intendedTree ? builderTreeToApiPayload(intendedTree) : null;
+
     const url = id ? `/api/policies/${id}` : '/api/policies';
     const method = id ? 'PUT' : 'POST';
 
@@ -996,55 +1003,16 @@
       const body = await res.json().catch(() => ({}));
       let msg = 'Could not save policy.';
       if (body.detail && typeof body.detail === 'string') msg = body.detail;
+      else if (body.detail && body.detail.code === 'policy.mutation.invalid_scope') {
+        msg = body.detail.message + '\n' + body.detail.diagnostics.map(d => d.reason).join('\n');
+      }
       else if (Array.isArray(body.detail) && body.detail[0] && body.detail[0].msg) msg = body.detail[0].msg;
       errorBox.textContent = msg;
       errorBox.hidden = false;
       return;
     }
 
-    const savedPolicy = await res.json();
-
-    // If the advanced condition builder is active, save the tree as a
-    // separate step against the now-known policy id (a brand-new
-    // policy doesn't have one until the create above returns it).
-    // The simple fields on `payload` above were already sent and
-    // saved, but resolve_condition_expression() checks for a
-    // condition tree FIRST (see app.services.condition_engine.
-    // has_condition_tree) -- so as soon as this PUT succeeds, the
-    // tree takes over from those simple fields entirely, exactly as
-    // the "Switch to advanced" hint in the GUI says it will.
-    if (currentConditionTree) {
-      const treeRes = await AAAPlatform.authedFetch(`/api/policies/${savedPolicy.id}/condition-tree`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(builderTreeToApiPayload(currentConditionTree)),
-      });
-      if (!treeRes.ok) {
-        const body = await treeRes.json().catch(() => ({}));
-        let msg = 'Policy saved, but its conditions could not be saved.';
-        if (body.detail && typeof body.detail === 'string') msg = body.detail;
-        else if (Array.isArray(body.detail) && body.detail[0] && body.detail[0].msg) msg = body.detail[0].msg;
-        AAAPlatform.toast(msg, 'error');
-        loadPolicies();
-        return;
-      }
-    } else if (msUserEntries.length > 0 || msDeviceEntries.length > 0) {
-      const treeRes = await AAAPlatform.authedFetch(`/api/policies/${savedPolicy.id}/condition-tree`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(builderTreeToApiPayload(msEntriesToConditionTree(msUserEntries, msDeviceEntries))),
-      });
-      if (!treeRes.ok) {
-        const body = await treeRes.json().catch(() => ({}));
-        let msg = 'Policy saved, but its conditions could not be saved.';
-        if (body.detail && typeof body.detail === 'string') msg = body.detail;
-        else if (Array.isArray(body.detail) && body.detail[0] && body.detail[0].msg) msg = body.detail[0].msg;
-        AAAPlatform.toast(msg, 'error');
-        loadPolicies();
-        return;
-      }
-    }
-
+    // Metadata, associations and scope have committed together on the server.
     closeModal();
     AAAPlatform.toast(id ? 'Policy updated.' : 'Policy added.');
     loadPolicies();
@@ -1068,6 +1036,7 @@
   async function openHistory(policy) {
     if (!policy) return;
     currentHistoryPolicyId = policy.id;
+    document.getElementById('history-restore-error').hidden = true;
     document.getElementById('history-modal-title').textContent = `Version History — ${policy.name}`;
     await renderHistoryList();
     document.getElementById('history-modal-backdrop').hidden = false;
@@ -1131,18 +1100,35 @@
   async function restoreVersion(versionId) {
     if (!confirm('Restore this version? This creates a new version with these values — nothing is deleted.')) return;
 
-    const res = await AAAPlatform.authedFetch(`/api/policies/${currentHistoryPolicyId}/versions/${versionId}/restore`, { method: 'POST' });
+    const errorBox = document.getElementById('history-restore-error');
+    errorBox.hidden = true;
+    let res;
+    try {
+      res = await AAAPlatform.authedFetch(`/api/policies/${currentHistoryPolicyId}/versions/${versionId}/restore`, { method: 'POST' });
+    } catch (_) {
+      errorBox.textContent = 'Restore result unavailable. Reload history to check the policy state before retrying.';
+      errorBox.hidden = false;
+      return;
+    }
     if (!res.ok) {
-      AAAPlatform.toast('Could not restore this version.', 'error');
+      const data = await res.json().catch(() => ({}));
+      const detail = data.detail;
+      const lines = ['Could not restore this version.'];
+      if (detail && detail.code === 'policy.restore.invalid') {
+        lines[0] = detail.message;
+        for (const d of detail.diagnostics || []) {
+          lines.push([d.object_type, d.object_name || d.object_id, d.reason, d.code].filter(Boolean).join(' · '));
+        }
+      }
+      errorBox.replaceChildren();
+      for (const text of lines) {
+        const row = document.createElement('p'); row.textContent = text; errorBox.append(row);
+      }
+      errorBox.hidden = false;
       return;
     }
     const data = await res.json();
-    if (data.warnings && data.warnings.length) {
-      AAAPlatform.toast(`Restored with ${data.warnings.length} warning(s) — see console.`, 'error');
-      console.warn('Restore warnings:', data.warnings);
-    } else {
-      AAAPlatform.toast('Policy restored.');
-    }
+    AAAPlatform.toast('Policy restored.');
     await renderHistoryList();
     loadPolicies();
   }

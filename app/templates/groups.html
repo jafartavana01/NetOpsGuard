@@ -40,8 +40,8 @@
         <div class="field-icon-wrap">
           <span class="field-icon">{{ icons.icon('shield', 14) }}</span>
           <select id="group-type">
-            <option value="local">Local — you add members directly</option>
-            <option value="ad">Active Directory — matches a real AD group's own membership</option>
+            <option value="local">Legacy / shared — authority unclassified</option>
+            <option value="ad">Active Directory — explicitly bound external source</option>
           </select>
         </div>
       </label>
@@ -50,6 +50,9 @@
       </div>
 
       <div id="group-ad-fields" hidden>
+        <label class="field"><span class="field-label">External source</span>
+          <select id="group-external-source"><option value="">Select a configured AD source</option></select>
+        </label>
         <label class="field">
           <span class="field-label">Search AD groups</span>
           <input type="text" id="group-ad-search-input" placeholder="Type at least 2 characters…" autocomplete="off">
@@ -77,7 +80,7 @@
           <span class="field-label">Linked AD group</span>
           <input type="text" id="group-ad-name" placeholder="e.g. tacacs_admins — the AD group's exact CN">
         </label>
-        <div class="field-hint" style="margin-top:-10px;margin-bottom:14px;">The AD group's exact CN — filled in automatically above, or type one directly if you already know it. Kept as a reference alongside Name, which is the prefix-stripped form tac_plus-ng actually matches.</div>
+        <div class="field-hint" style="margin-top:-10px;margin-bottom:14px;">The AD group's exact CN — filled in automatically above, or type one directly if you already know it. Saving Active Directory classification binds this CN and the selected source. Name must equal the prefix-stripped runtime name. A nonmatching policy can fall through to later policies; this is not a global deny boundary.</div>
       </div>
 
       <div id="group-form-error" class="form-error" role="alert" hidden></div>
@@ -121,6 +124,7 @@
 {% block view_scripts %}
 <script>
   let tacacsGroups = [];
+  let externalSources = [];
 
   function escapeHtml(s) {
     // Escapes quotes as well as angle brackets, so the result is safe
@@ -154,18 +158,18 @@
 
   function memberCellText(g) {
     const local = g.member_count || 0;
-    if (!g.ad_group_name) return local + (local === 1 ? ' member' : ' members');
+    if (g.authority !== 'EXTERNAL') return local + (local === 1 ? ' member' : ' members');
     const ad = adCounts.get(g.id);
-    if (ad === undefined) return local + ' local +AD\u2026';
-    if (ad === 'error') return local + ' local (AD unreachable)';
-    return (local + ad) + ' members (' + local + ' local, ' + ad + ' AD)';
+    if (ad === undefined) return 'AD lookup pending (' + local + ' local rows, not EXTERNAL membership)';
+    if (ad === 'error') return 'AD unavailable (' + local + ' local rows)';
+    return ad + ' directory members (' + local + ' local rows, not EXTERNAL membership)';
   }
 
   async function loadAdMemberCounts() {
     // Sequential on purpose: a fleet of AD-backed groups should not
     // open a burst of LDAP searches at once.
     for (const g of tacacsGroups) {
-      if (!g.ad_group_name) continue;
+      if (g.authority !== 'EXTERNAL') continue;
       try {
         const res = await AAAPlatform.authedFetch(
           '/api/ad-settings/group-members?group_name=' + encodeURIComponent(g.ad_group_name));
@@ -226,6 +230,10 @@
       <tr data-group-row="${g.id}">
         <td>${escapeHtml(g.name)}</td>
         <td>${escapeHtml(g.description || '—')}</td>
+        <td>${g.authority === 'EXTERNAL' ? 'Active Directory / EXTERNAL' : 'Legacy / shared (unclassified)'}<br>
+          ${g.authority === 'EXTERNAL' ? escapeHtml(g.ad_group_name) + ' → ' + escapeHtml(g.name) + '<br>' + escapeHtml(g.external_source_name) + '<br>' + escapeHtml(g.binding_status) : 'No exclusive LOCAL authority'}
+          ${(g.binding_diagnostics || []).map(d => '<div class="form-error">' + escapeHtml(d.code + ': ' + d.reason) + '</div>').join('')}
+        </td>
         <td>${g.referenced_by_policy_names.length ? g.referenced_by_policy_names.map(escapeHtml).join(', ') : '<span class="content-sub">none</span>'}</td>
         <td class="cell-mono" data-members-for="${g.id}">${memberCellText(g)}</td>
         <td class="cell-actions">
@@ -239,7 +247,7 @@
     wrap.innerHTML = `
       <table class="data-table">
         <thead>
-          <tr><th>Name</th><th>Description</th><th>Policies</th><th>Members</th><th></th></tr>
+          <tr><th>Name</th><th>Description</th><th>Authority / binding</th><th>Policies</th><th>Members</th><th></th></tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
@@ -272,7 +280,12 @@
   async function loadGroups() {
     const res = await AAAPlatform.authedFetch('/api/tacacs-groups');
     if (res.status === 401) { window.location.href = '/login'; return; }
+    if (!res.ok) { AAAPlatform.toast('Could not load groups.', 'error'); return; }
     tacacsGroups = await res.json();
+    const sourcesResponse = await AAAPlatform.authedFetch('/api/tacacs-groups/external-sources');
+    externalSources = sourcesResponse.ok ? await sourcesResponse.json() : [];
+    document.getElementById('group-external-source').innerHTML = '<option value="">Select a configured AD source</option>' +
+      externalSources.map(source => '<option value="' + escapeHtml(source.id) + '">' + escapeHtml(source.host + ' — ' + source.name + (source.enabled ? '' : ' (disabled)')) + '</option>').join('');
     renderTable();
   }
 
@@ -287,12 +300,12 @@
     if (isAd) {
       hintPanel.style.borderColor = 'var(--red)';
       hint.style.color = 'var(--red)';
-      hint.textContent = '⚠ For Active Directory groups, membership is determined ENTIRELY by real AD group membership — an AD user must actually belong to this exact group in Active Directory for a policy to permit them. Adding members with the Members button on the group list has no effect here.';
+      hint.textContent = 'Positive TACACS+ membership must come from the explicitly bound source and match this runtime group. Local member rows are not required. If this policy does not match, later policies may apply. Negative membership, device access overrides and RADIUS authority are unsupported.';
       nameHint.textContent = 'Must exactly match what tac_plus-ng reports for AD users in this group — the AD group\'s CN with any configured prefix stripped. Search below and select a match rather than typing this by hand.';
     } else {
       hintPanel.style.borderColor = 'var(--line)';
       hint.style.color = 'var(--text-dim)';
-      hint.textContent = 'Add members with the Members button after saving. This drives authorization for locally-authenticated users only — it has no effect on Active Directory users (use the Active Directory type instead for them).';
+      hint.textContent = 'Authority is unclassified. Existing local/shared behavior and F03 validation remain in effect; this does not promise local-only isolation. Empty or ambiguous referenced groups can block configuration. Choose Active Directory only after reviewing its explicit binding.';
       nameHint.textContent = 'Letters, digits, hyphens, underscores only — used directly as the tac_plus-ng group identifier.';
     }
   }
@@ -309,7 +322,8 @@
       document.getElementById('group-name').value = group.name;
       document.getElementById('group-description').value = group.description || '';
       document.getElementById('group-ad-name').value = group.ad_group_name || '';
-      document.getElementById('group-type').value = group.ad_group_name ? 'ad' : 'local';
+      document.getElementById('group-type').value = group.authority === 'EXTERNAL' ? 'ad' : 'local';
+      document.getElementById('group-external-source').value = group.external_source_id || '';
     } else {
       document.getElementById('group-modal-title').textContent = 'Add group';
       document.getElementById('group-id').value = '';
@@ -334,11 +348,13 @@
 
   let cachedAdGroupPrefix = null;
   async function getAdGroupPrefix() {
-    if (cachedAdGroupPrefix !== null) return cachedAdGroupPrefix;
-    const res = await AAAPlatform.authedFetch('/api/ad-settings');
-    cachedAdGroupPrefix = (res.ok ? (await res.json()).group_prefix : null) || '';
+    // Source selection is explicit; never infer a binding from global AD state.
+    const source = externalSources.find(s => s.id === document.getElementById('group-external-source').value);
+    cachedAdGroupPrefix = source ? source.group_prefix : '';
     return cachedAdGroupPrefix;
   }
+
+  document.getElementById('group-external-source').addEventListener('change', () => { cachedAdGroupPrefix = null; });
 
   const LOCAL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
@@ -373,16 +389,22 @@
       resultsEl.innerHTML = '<div class="content-sub">No matches. If you expect this group to exist, it may live outside the configured search base — check the Active Directory settings page.</div>';
       return;
     }
+    // The runtime matches CN-derived names, not directory DNs. Never present
+    // duplicate CNs in this response as independently selectable identities.
+    const cnCounts = new Map();
+    results.forEach(r => cnCounts.set(r.cn.toLowerCase(), (cnCounts.get(r.cn.toLowerCase()) || 0) + 1));
     resultsEl.innerHTML = results.map(r => `
       <div class="version-row">
-        <span style="flex:1;">${escapeHtml(r.cn)}</span>
-        <button type="button" class="btn-secondary btn-small" data-pick-ad-group="${escapeHtml(r.cn)}">Use this</button>
+        <span style="flex:1;">${escapeHtml(r.cn)}${cnCounts.get(r.cn.toLowerCase()) > 1 ? ' — ambiguous duplicate CN; cannot bind separately' : ''}</span>
+        <button type="button" class="btn-secondary btn-small" data-pick-ad-group="${escapeHtml(r.cn)}" ${cnCounts.get(r.cn.toLowerCase()) > 1 ? 'disabled' : ''}>Use this</button>
       </div>
     `).join('');
     resultsEl.querySelectorAll('[data-pick-ad-group]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const cn = btn.dataset.pickAdGroup;
         document.getElementById('group-ad-name').value = cn;
+        document.getElementById('group-type').value = 'ad';
+        toggleGroupTypeFields();
 
         // Suggest the LOCAL name as the prefix-stripped CN -- this is
         // what tac_plus-ng actually reports for `member ==` matching
@@ -427,6 +449,8 @@
 
     const id = document.getElementById('group-id').value;
     const payload = {
+      authority: document.getElementById('group-type').value === 'ad' ? 'EXTERNAL' : 'LEGACY',
+      external_source_id: document.getElementById('group-type').value === 'ad' ? (document.getElementById('group-external-source').value || null) : null,
       name: document.getElementById('group-name').value,
       description: document.getElementById('group-description').value || null,
       ad_group_name: document.getElementById('group-ad-name').value.trim() || null,
@@ -441,7 +465,7 @@
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      errorBox.textContent = (body.detail && typeof body.detail === 'string') ? body.detail : 'Could not save group.';
+      errorBox.textContent = typeof body.detail === 'string' ? body.detail : (Array.isArray(body.detail) ? body.detail.map(d => d.reason || d.msg || d.code).join(' · ') : 'Could not save group.');
       errorBox.hidden = false;
       return;
     }
@@ -474,7 +498,7 @@
     currentMembersGroup = group;
     document.getElementById('members-modal-title').textContent = `Members — ${group.name}`;
     document.getElementById('members-add-note').hidden = true;
-    const isAd = !!group.ad_group_name;
+    const isAd = group.authority === 'EXTERNAL';
     document.getElementById('members-local-fields').hidden = isAd;
     document.getElementById('members-ad-note').hidden = !isAd;
     if (isAd) {

@@ -31,7 +31,7 @@ def system_status(
     try:
         db.execute(text("SELECT 1"))
     except Exception as exc:  # pragma: no cover - defensive
-        db_status = f"error: {exc}"
+        db_status = "unavailable"
 
     services = {}
     for unit in (service_control.MANAGEMENT_UNIT, service_control.TAC_PLUS_NG_UNIT):
@@ -43,12 +43,12 @@ def system_status(
                 "enabled": status.enabled,
             }
         except service_control.ServiceControlError as exc:
-            services[unit] = {"error": str(exc)}
+            services[unit] = {"error": "Service status is unavailable."}
 
     return {
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "os": platform.platform(),
         "database": db_status,
         "services": services,
-        "build_info": build_info_service.get_build_info(),
+        "build_info": build_info_service.get_public_build_info(),
     }

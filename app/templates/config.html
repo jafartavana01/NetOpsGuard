@@ -109,21 +109,25 @@
 
     const data = await res.json();
 
-    function uncompilableWarningHtml() {
-      if (!data.uncompilable_policies || data.uncompilable_policies.length === 0) return '';
-      const rows = data.uncompilable_policies.map(p => `<li><strong>${escapeHtml(p.name)}</strong> — ${escapeHtml(p.reason)}</li>`).join('');
-      return `<div class="panel-body" style="border-top:1px solid var(--line);margin-top:16px;padding-top:16px;">
-        <span class="badge badge-off" style="margin-bottom:10px;display:inline-flex;">Policy excluded from config</span>
-        <p class="content-sub">The following ${data.uncompilable_policies.length === 1 ? 'policy is' : 'policies are'} enabled but can't be compiled into the real configuration, so ${data.uncompilable_policies.length === 1 ? 'it contributes' : 'they contribute'} nothing to what's applied — this is why creating or editing ${data.uncompilable_policies.length === 1 ? 'it' : 'them'} may not show up as a pending change at all:</p>
-        <ul class="content-sub" style="margin:8px 0 0 18px;">${rows}</ul>
+    if (data.applicable === false) {
+      const rows = (data.diagnostics || []).map(d => `<li>
+        <strong>${escapeHtml(d.protocol)}: ${escapeHtml(d.policy_name)}</strong>
+        — ${escapeHtml(d.reason)}
+        <div>${escapeHtml(d.path)} · ${escapeHtml(d.code)}${d.object_id ? ' · ' + escapeHtml(d.object_id) : ''}</div>
+      </li>`).join('');
+      panel.innerHTML = `<div class="panel-body">
+        <span class="badge badge-off">Configuration blocked</span>
+        <p class="content-sub">Resolve the policy scope errors before applying. The deployed configuration has not been changed.</p>
+        <ul class="content-sub">${rows}</ul>
       </div>`;
+      return;
     }
 
     if (!data.has_changes) {
       panel.innerHTML = `<div class="panel-body">
         <span class="badge badge-on" style="margin-bottom:12px;display:inline-flex;">Up to date</span>
         <p class="content-sub">The compiled configuration matches what's currently deployed. No action needed.</p>
-      </div>${uncompilableWarningHtml()}`;
+      </div>`;
       return;
     }
 
@@ -134,7 +138,7 @@
           <button class="btn-primary" id="apply-btn" style="width:auto;">Apply configuration</button>
         </div>
       </div>
-      ${uncompilableWarningHtml()}
+      
     `;
     document.getElementById('apply-btn').addEventListener('click', applyConfig);
   }
@@ -157,6 +161,7 @@
       const journal = (detail && detail.journal) ? detail.journal : '';
 
       AAAPlatform.toast(message, 'error');
+      if (detail && detail.code === 'invalid_policy_scope') { await loadCandidate(); return; }
       btn.disabled = false;
       btn.textContent = 'Apply configuration';
 

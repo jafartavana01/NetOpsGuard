@@ -53,6 +53,7 @@
 
   function closeMobileNav() {
     if (sidebar) sidebar.classList.remove('is-open');
+    if (navToggle) navToggle.setAttribute('aria-expanded', 'false');
     if (scrim) scrim.classList.remove('is-visible');
   }
 
@@ -191,9 +192,16 @@
   if (navToggle && sidebar) {
     navToggle.addEventListener('click', () => {
       sidebar.classList.toggle('is-open');
+      navToggle.setAttribute('aria-expanded', String(sidebar.classList.contains('is-open')));
+      if (sidebar.classList.contains('is-open')) sidebar.querySelector('input,button,a')?.focus();
       if (scrim) scrim.classList.toggle('is-visible');
     });
   }
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && sidebar?.classList.contains('is-open')) {
+      closeMobileNav(); navToggle?.focus();
+    }
+  });
   if (scrim) {
     scrim.addEventListener('click', closeMobileNav);
   }
