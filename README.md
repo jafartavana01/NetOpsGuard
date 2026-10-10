@@ -1,3 +1,5 @@
+<img width="1874" height="857" alt="image" src="https://github.com/user-attachments/assets/60af06ac-6017-447e-bd37-69bb27d9c427" />
+
 # NetOpsGuard
 
 NetOpsGuard is a self-hosted network operations and security platform for managing network infrastructure from one web interface.
