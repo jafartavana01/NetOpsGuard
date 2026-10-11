@@ -457,21 +457,7 @@
   });
 
   async function deleteSet(id) {
-    const cs = commandSets.find(c => c.id === id);
-    if (cs && cs.policy_count > 0) {
-      AAAPlatform.toast(`Referenced by ${cs.policy_count} polic${cs.policy_count === 1 ? 'y' : 'ies'} — remove those references first.`, 'error');
-      return;
-    }
-    if (!confirm(`Delete command set "${cs ? cs.name : id}"?`)) return;
-
-    const res = await AAAPlatform.authedFetch(`/api/command-sets/${id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      AAAPlatform.toast((body.detail && typeof body.detail === 'string') ? body.detail : 'Could not delete command set.', 'error');
-      return;
-    }
-    AAAPlatform.toast('Command set deleted.');
-    loadSets();
+    return DependencyUI.open([{type: 'command_set', id}], loadSets);
   }
 
   (async function init() {

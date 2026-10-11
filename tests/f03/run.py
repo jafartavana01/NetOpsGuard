@@ -1,4 +1,4 @@
-"""Dependency-free isolated suite. JSON inventory optional; no production imports."""
+"""F03 contract suite. JSON inventory optional; includes real HTTP/SQLite checks."""
 import argparse
 import json
 import sys

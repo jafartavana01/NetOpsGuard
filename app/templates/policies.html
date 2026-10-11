@@ -1030,16 +1030,7 @@
   });
 
   async function deletePolicy(id) {
-    const policy = policies.find(p => p.id === id);
-    if (!confirm(`Delete policy "${policy ? policy.name : id}"?`)) return;
-
-    const res = await AAAPlatform.authedFetch(`/api/policies/${id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      AAAPlatform.toast('Could not delete policy.', 'error');
-      return;
-    }
-    AAAPlatform.toast('Policy deleted.');
-    loadPolicies();
+    return DependencyUI.open([{type: 'policy', id}], loadPolicies);
   }
 
   let currentHistoryPolicyId = null;

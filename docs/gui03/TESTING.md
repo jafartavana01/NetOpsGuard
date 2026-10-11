@@ -15,7 +15,7 @@ python tests/gui03/run_checks.py
 
 `GUI03_EVIDENCE` optionally selects a directory outside the source tree. Default: `docs/gui03/evidence` (ignored). Browser fixtures bind loopback port 8767, render actual Jinja templates and intercept API requests with synthetic data. Do not deploy the fixture server.
 
-The runner invokes the existing F03 suite (both modes), nine existing script checks, metadata tests, GUI-01/02 contracts, four PostgreSQL integration entry points, atomic/history browser tests and GUI-01/02 browser tests. It retains existing expected failures. An exit code of 1 is expected only from `--no-xfail`; inspect the report to verify that these are the known 23 failures, not new failures.
+The runner invokes the existing F03 suite (both modes), nine existing script checks, metadata tests, GUI-01/02 contracts, four PostgreSQL integration entry points, atomic/history browser tests and GUI-01/02 browser tests. An exit code of 1 is expected only from `--no-xfail`; inspect the report to verify the remaining known failures, not new failures. GUI-03 originally had 23 expected failures; dependency-aware deletion subsequently fixed ten deletion cases (189 PASS / 13 XFAIL). See `docs/dependencies/TESTING.md` for their real-database test adapter.
 
 PostgreSQL tests require the explicitly configured disposable `F03_POSTGRES_DSN` and otherwise skip. Skips are not database verification. GUI-03 tests make no native daemon, live LDAP, live device provisioning or installed-service claims.
 

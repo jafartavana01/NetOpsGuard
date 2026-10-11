@@ -305,11 +305,7 @@
     const del = e.target.closest('button[data-delete]');
     if (!del) return;
     const p = policies.find((x) => x.id === del.dataset.delete);
-    if (!p || !window.confirm('Delete the RADIUS policy "' + p.name + '"? Devices using it will fall back to their own defaults.')) return;
-    const res = await AAAPlatform.authedFetch('/api/radius/policies/' + p.id, { method: 'DELETE' });
-    if (!res.ok) { AAAPlatform.toast('Could not delete that policy.', 'error'); return; }
-    AAAPlatform.toast('Policy deleted — apply the configuration to take effect.');
-    load();
+    if (p) return DependencyUI.open([{type: 'radius_policy', id: p.id}], load);
   });
 
   document.getElementById('rp-form').addEventListener('submit', async (e) => {

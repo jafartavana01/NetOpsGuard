@@ -179,6 +179,5 @@ def delete_user(
     db: Session = Depends(get_db),
     _admin: AdminUser = Depends(require_permission("tacacs_users:write")),
 ):
-    user = _get_user_or_404(db, user_id)
-    db.delete(user)
-    db.commit()
+    from ..services.dependency_deletion import delete_direct
+    delete_direct(db, 'user', user_id, _admin)

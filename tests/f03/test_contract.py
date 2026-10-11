@@ -328,23 +328,14 @@ for model, path, fn, getter, field, object_type in [
 ]:
     for mode in (('tree',) if field is None else ('legacy', 'radius', 'tree')):
         def make(model=model, path=path, fn=fn, getter=getter, field=field, object_type=object_type, mode=mode):
-            @contract('T2/R2', 'Deletion handler must reject referenced-object deletion; this double does not emulate FKs.')
             def test(self):
-                obj = self.h.row(model, name='target', username='target')
-                rows = {model: [obj]}
-                if mode == 'tree':
-                    p = self.h.policy()
-                    rows.update(Policy=[p],
-                        PolicyConditionGroup=[self.h.row('PolicyConditionGroup', id='root', policy_id=p.id, parent_group_id=None, logical_operator='AND', order=0)],
-                        PolicyCondition=[self.h.leaf(object_type=object_type, referenced_object_id=obj.id)])
-                else:
-                    rows['RadiusPolicy' if mode == 'radius' else 'Policy'] = [self.h.policy(radius=mode == 'radius', **{field: obj.id})]
-                db = DB(**rows)
-                self.h.load(path, fn, True)
-                self.h.ns[getter] = lambda db, target: obj
-                try: self.h.call(fn, str(obj.id), db, self.admin)
-                except HTTPException: pass
-                self.assertFalse(db.deleted, 'Handler allowed deletion without dependency protection')
+                """T2/R2: Actual DELETE transaction rejects references and preserves complete rows."""
+                import sys
+                sys.path.insert(0, str(ROOT / 'tests/dependencies'))
+                from legacy_contract_bridge import assert_deletion_case
+                assert_deletion_case(self, model, path, fn, field, object_type, mode)
+            test.finding = 'T2/R2'
+            test.classification = 'currently passes: transactional dependency protection'
             return test
         setattr(LifecycleTests, 'test_delete_' + mode + '_' + model.lower(), make())
 

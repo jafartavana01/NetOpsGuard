@@ -200,17 +200,7 @@
   });
 
   async function deleteGroup(id) {
-    const group = deviceGroups.find(g => g.id === id);
-    const memberNote = group && group.member_count > 0 ? ` Its ${group.member_count} member(s) will be ungrouped, not deleted.` : '';
-    if (!confirm(`Delete group "${group ? group.name : id}"?${memberNote}`)) return;
-
-    const res = await AAAPlatform.authedFetch(`/api/device-groups/${id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      AAAPlatform.toast('Could not delete group.', 'error');
-      return;
-    }
-    AAAPlatform.toast('Group deleted.');
-    loadGroups();
+    return DependencyUI.open([{type: 'device_group', id}], loadGroups);
   }
 
   // ---------- Members ----------

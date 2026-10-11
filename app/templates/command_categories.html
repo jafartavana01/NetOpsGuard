@@ -182,16 +182,7 @@
   });
 
   async function deleteCategory(id) {
-    const category = categories.find(c => c.id === id);
-    if (!confirm(`Delete category "${category ? category.name : id}"? Rules using it will simply become uncategorized.`)) return;
-
-    const res = await AAAPlatform.authedFetch(`/api/command-categories/${id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      AAAPlatform.toast('Could not delete category.', 'error');
-      return;
-    }
-    AAAPlatform.toast('Category deleted.');
-    loadCategories();
+    return DependencyUI.open([{type: 'command_category', id}], loadCategories);
   }
 
   loadCategories();

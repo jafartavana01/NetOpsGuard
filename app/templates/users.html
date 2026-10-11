@@ -507,16 +507,7 @@
   });
 
   async function deleteUser(id) {
-    const user = tacacsUsers.find(u => u.id === id);
-    if (!confirm(`Delete user "${user ? user.username : id}"? This cannot be undone.`)) return;
-
-    const res = await AAAPlatform.authedFetch(`/api/tacacs-users/${id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      AAAPlatform.toast('Could not delete user.', 'error');
-      return;
-    }
-    AAAPlatform.toast('User deleted.');
-    loadUsers();
+    return DependencyUI.open([{type: 'user', id}], loadUsers);
   }
 
   async function loadAccessLog() {

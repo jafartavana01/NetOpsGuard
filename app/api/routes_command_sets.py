@@ -187,12 +187,5 @@ def delete_command_set(
     db: Session = Depends(get_db),
     _admin: AdminUser = Depends(require_permission("policies:write")),
 ):
-    command_set = _get_command_set_or_404(db, command_set_id)
-    ref_count = db.query(func.count(PolicyCommandSet.id)).filter(PolicyCommandSet.command_set_id == command_set.id).scalar()
-    if ref_count:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            detail=f"This command set is referenced by {ref_count} polic{'y' if ref_count == 1 else 'ies'} -- remove those references first.",
-        )
-    db.delete(command_set)
-    db.commit()
+    from ..services.dependency_deletion import delete_direct
+    delete_direct(db, 'command_set', command_set_id, _admin)

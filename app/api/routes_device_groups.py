@@ -119,9 +119,8 @@ def delete_device_group(
     db: Session = Depends(get_db),
     _admin: AdminUser = Depends(require_permission("devices:write")),
 ):
-    group = _get_group_or_404(db, group_id)
-    db.delete(group)
-    db.commit()
+    from ..services.dependency_deletion import delete_direct
+    delete_direct(db, 'device_group', group_id, _admin)
 
 
 @router.get("/{group_id}/members")

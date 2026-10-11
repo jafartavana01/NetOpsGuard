@@ -105,16 +105,5 @@ def delete_command_category(
     db: Session = Depends(get_db),
     _admin: AdminUser = Depends(require_permission("policies:write")),
 ):
-    try:
-        parsed_id = uuid.UUID(category_id)
-    except ValueError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Category not found.")
-    category = db.query(CommandCategory).filter(CommandCategory.id == parsed_id).first()
-    if not category:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Category not found.")
-    # CommandRule.category_id is ON DELETE SET NULL -- deleting a
-    # category un-categorizes any rules that referenced it rather than
-    # deleting or blocking on those rules, since category is purely
-    # observational metadata (see app/models/command_category.py).
-    db.delete(category)
-    db.commit()
+    from ..services.dependency_deletion import delete_direct
+    delete_direct(db, 'command_category', category_id, _admin)

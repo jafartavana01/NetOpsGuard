@@ -290,9 +290,8 @@ def delete_device(
     db: Session = Depends(get_db),
     _admin: AdminUser = Depends(require_permission("devices:write")),
 ):
-    device = _get_device_or_404(db, device_id)
-    db.delete(device)
-    db.commit()
+    from ..services.dependency_deletion import delete_direct
+    delete_direct(db, 'device', device_id, _admin)
 
 
 # ---------- Apply AAA config to an already-existing device ----------

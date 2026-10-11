@@ -189,7 +189,7 @@ def list_policies(
     return [policy_to_out(db, p) for p in policies]
 
 
-def _mutate_policy(db: Session, payload, admin: AdminUser, *, policy_id: str | None):
+def _mutate_policy(db: Session, payload, admin: AdminUser, *, policy_id: str | None, commit: bool = True):
     """One authoritative write transaction; helpers may flush, never commit.
 
     The dependency may already have begun a transaction for authentication.
@@ -241,7 +241,8 @@ def _mutate_policy(db: Session, payload, admin: AdminUser, *, policy_id: str | N
             change_description=payload.change_description or ('Created' if policy_id is None else None))
         db.flush()
         response = policy_to_out(db, policy, command_sets)
-        db.commit()
+        if commit:
+            db.commit()
         return response
     except IntegrityError:
         db.rollback()
@@ -348,9 +349,8 @@ def delete_policy(
     db: Session = Depends(get_db),
     _admin: AdminUser = Depends(require_permission("policies:write")),
 ):
-    policy = _get_policy_or_404(db, policy_id)
-    db.delete(policy)
-    db.commit()
+    from ..services.dependency_deletion import delete_direct
+    delete_direct(db, 'policy', policy_id, _admin)
 
 
 class ReorderRequest(BaseModel):

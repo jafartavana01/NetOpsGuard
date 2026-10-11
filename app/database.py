@@ -19,6 +19,8 @@ from collections.abc import Generator
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.exc import OperationalError
+from starlette.requests import Request
 
 from .config import get_settings
 
@@ -45,12 +47,25 @@ def get_sessionmaker():
     return _SessionLocal
 
 
-def get_db() -> Generator[Session, None, None]:
+def get_db(request: Request = None) -> Generator[Session, None, None]:
     """FastAPI dependency: yields a session, always closed after the request."""
     session_local = get_sessionmaker()
     db = session_local()
     try:
+        if request is not None and request.method not in ('GET', 'HEAD', 'OPTIONS'):
+            # Every API writer participates, including older tree/restore and
+            # association routes. Acquire before authentication's first query.
+            from .services.reference_lock import guard
+            guard(db)
         yield db
+    except OperationalError as exc:
+        db.rollback()
+        code = getattr(exc.orig, 'sqlstate', None) or getattr(exc.orig, 'pgcode', None)
+        if code in ('55P03', '40001', '40P01') or 'database is locked' in str(exc.orig).lower():
+            from fastapi import HTTPException
+            raise HTTPException(409, detail={'code': 'dependency.transaction_conflict',
+                'message': 'Another configuration transaction is active or changed the data. Refresh and retry; this transaction was rolled back.'}) from None
+        raise
     finally:
         db.close()
 
@@ -68,7 +83,7 @@ def init_db() -> None:
         device_access_grant, ad_settings, monitoring_settings, aaa_template_settings,
         command_template, command_job, network_ops_check, network_ops_audit, audit_run,
         audit_schedule_settings, audit_batch, config_integrity, license, ncm,
-        radius_settings, radius_policy, security_protection,
+        radius_settings, radius_policy, security_protection, dependency_audit,
     )
 
     Base.metadata.create_all(bind=get_engine())

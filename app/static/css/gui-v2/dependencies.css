@@ -1,0 +1,11 @@
+.dependency-dialog { display:grid; gap:var(--space-3,12px); }
+.dependency-dialog p { margin:0; line-height:1.5; }
+.dependency-card { border:1px solid var(--border-subtle); border-radius:8px; padding:16px; display:grid; gap:10px; }
+.dependency-card code { display:block; overflow-wrap:anywhere; font-size:12px; }
+.dependency-warning { padding:12px; border-left:3px solid var(--warning); background:var(--surface-raised); }
+.dependency-actions,.dependency-selection { display:flex; flex-wrap:wrap; gap:10px; align-items:center; padding:12px 0; }
+.dependency-selection { font-size:12px; }
+.dependency-summary { font-weight:600; }
+.dependency-policy-detail { white-space:pre-wrap; overflow-wrap:anywhere; max-height:360px; overflow:auto; font-size:12px; }
+.dependency-dialog label { display:grid; gap:8px; }
+input[data-dependency-select] { width:16px; height:16px; vertical-align:middle; margin-right:8px; }

@@ -262,10 +262,5 @@ def delete_policy(
     db: Session = Depends(get_db),
     _admin: AdminUser = Depends(require_permission("policies:write")),
 ):
-    policy = db.query(RadiusPolicy).filter(RadiusPolicy.id == _parse_uuid(policy_id, "policy id")).first()
-    if not policy:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="RADIUS policy not found.")
-    db.delete(policy)
-    db.commit()
-    from fastapi import Response
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    from ..services.dependency_deletion import delete_direct
+    delete_direct(db, 'radius_policy', policy_id, _admin)
