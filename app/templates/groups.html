@@ -4,17 +4,17 @@
 {% block breadcrumb %}TACACS+ / Groups{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content aaa-workspace">
   <div class="content-head">
     <h1>TACACS+ Groups</h1>
-    <p class="content-sub">Assign users to a group on the Users page. Deleting a group ungroups its members — it doesn't delete them.</p>
+    <p class="content-sub">Identity groups and their declared authority. Directory membership is resolved externally; local rows are not a directory membership count.</p>
   </div>
 
-  <div class="panel panel-wide" style="margin-bottom:20px;">
+  <details class="aaa-help"><summary>Group authority and policy references</summary>
     <div class="panel-body" style="font-size:12.5px;color:var(--text-dim);">
       A group no longer "owns" a policy directly — <strong style="color:var(--text-primary);">assign a policy to this group from the Policies page instead</strong> (set the policy's Group condition). The "Policies" column below shows every policy currently targeting each group, for reference.
     </div>
-  </div>
+  </details>
 
   <div class="toolbar">
     <span class="content-sub" id="group-count"></span>
@@ -23,7 +23,7 @@
 
   <div class="status-card-grid" id="groups-kpis" style="margin-bottom:16px;"></div>
 
-  <div id="groups-table-wrap">
+  <div id="groups-table-wrap" data-aaa-table>
     <div class="empty-state">Loading groups…</div>
   </div>
 </main>
@@ -158,11 +158,11 @@
 
   function memberCellText(g) {
     const local = g.member_count || 0;
-    if (g.authority !== 'EXTERNAL') return local + (local === 1 ? ' member' : ' members');
+    if (g.authority !== 'EXTERNAL') return local + ' local rows · authority unclassified';
     const ad = adCounts.get(g.id);
-    if (ad === undefined) return 'AD lookup pending (' + local + ' local rows, not EXTERNAL membership)';
-    if (ad === 'error') return 'AD unavailable (' + local + ' local rows)';
-    return ad + ' directory members (' + local + ' local rows, not EXTERNAL membership)';
+    if (ad === undefined) return 'Directory lookup pending';
+    if (ad === 'error') return 'Directory count unavailable';
+    return ad + ' directory members (observed)';
   }
 
   async function loadAdMemberCounts() {
@@ -202,7 +202,7 @@
       (g) => (g.referenced_by_policy_names || []).length > 0).length;
     document.getElementById('groups-kpis').innerHTML = [
       AAAPlatform.kpiCard({ icon: ICON_USERS, label: 'Total Groups', value: tacacsGroups.length }),
-      AAAPlatform.kpiCard({ icon: ICON_USER, label: 'Total Memberships', value: members }),
+      AAAPlatform.kpiCard({ icon: ICON_USER, label: 'Observed Membership Rows', value: members, sub: 'Partial while directory counts are unavailable' }),
       AAAPlatform.kpiCard({ icon: ICON_LIST, label: 'Used By Policies', value: inPolicy,
                             sub: (tacacsGroups.length - inPolicy) + ' unreferenced' }),
     ].join('');
@@ -228,15 +228,14 @@
 
     const rows = tacacsGroups.map(g => `
       <tr data-group-row="${g.id}">
-        <td>${escapeHtml(g.name)}</td>
-        <td>${escapeHtml(g.description || '—')}</td>
-        <td>${g.authority === 'EXTERNAL' ? 'Active Directory / EXTERNAL' : 'Legacy / shared (unclassified)'}<br>
-          ${g.authority === 'EXTERNAL' ? escapeHtml(g.ad_group_name) + ' → ' + escapeHtml(g.name) + '<br>' + escapeHtml(g.external_source_name) + '<br>' + escapeHtml(g.binding_status) : 'No exclusive LOCAL authority'}
-          ${(g.binding_diagnostics || []).map(d => '<div class="form-error">' + escapeHtml(d.code + ': ' + d.reason) + '</div>').join('')}
-        </td>
-        <td>${g.referenced_by_policy_names.length ? g.referenced_by_policy_names.map(escapeHtml).join(', ') : '<span class="content-sub">none</span>'}</td>
-        <td class="cell-mono" data-members-for="${g.id}">${memberCellText(g)}</td>
+        <td><strong>${escapeHtml(g.name)}</strong><div class="content-sub">${escapeHtml(g.description || '')}</div></td>
+        <td>${g.authority === 'EXTERNAL' ? '<span class="badge badge-info">EXTERNAL</span>' : '<span class="badge badge-warning">LEGACY</span><div class="content-sub">Unclassified / shared</div>'}</td>
+        <td>${escapeHtml(g.authority === 'EXTERNAL' ? (externalSources.find(s=>s.id===g.external_source_id)?.host || 'Source unavailable') : 'Not exclusively bound')}</td>
+        <td data-members-for="${g.id}">${memberCellText(g)}</td>
+        <td>${escapeHtml(g.authority === 'EXTERNAL' ? (g.binding_status || 'Unknown') : 'Review authority')} ${(g.binding_diagnostics || []).length ? '<span class="badge badge-warning">Diagnostics</span>' : ''}</td>
+        <td>${g.referenced_by_policy_names.length ? g.referenced_by_policy_names.map(escapeHtml).join(', ') : '<span class="content-sub">none reported</span>'}</td>
         <td class="cell-actions">
+          <button class="btn-secondary btn-small" data-binding="${g.id}">Details</button>
           <button class="btn-secondary btn-small" data-members="${g.id}">Members</button>
           <button class="btn-secondary btn-small" data-edit="${g.id}">Edit</button>
           <button class="btn-danger btn-small" data-delete="${g.id}">Delete</button>
@@ -247,7 +246,7 @@
     wrap.innerHTML = `
       <table class="data-table">
         <thead>
-          <tr><th>Name</th><th>Description</th><th>Authority / binding</th><th>Policies</th><th>Members</th><th></th></tr>
+          <tr><th>Group name</th><th>Authority</th><th>Directory source</th><th>Membership</th><th>Binding status</th><th>Policies</th><th>Actions</th></tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
@@ -256,6 +255,10 @@
     wrap.querySelectorAll('[data-edit]').forEach(btn => {
       btn.addEventListener('click', () => openModal(tacacsGroups.find(g => g.id === btn.dataset.edit)));
     });
+    wrap.querySelectorAll('[data-binding]').forEach(btn=>btn.addEventListener('click',()=>{
+      const g=tacacsGroups.find(g=>g.id===btn.dataset.binding);
+      AAAWorkspace.details('Group — '+g.name,[['Authority',g.authority || 'LEGACY'],['Directory CN → runtime group',g.authority==='EXTERNAL'?`${g.ad_group_name} → ${g.name}`:'Not exclusively bound'],['External source ID',g.external_source_id],['Runtime source',g.external_source_name],['Binding status',g.binding_status],['Diagnostics',(g.binding_diagnostics||[]).map(d=>d.code+': '+d.reason).join('\n')||'None reported'],['Local inventory',`${g.member_count || 0} rows; not proof of directory membership or exclusive LOCAL authority.`],['Reported policy references',(g.referenced_by_policy_names||[]).join(', ')||'None reported; this is not a deletion safety check.']]);
+    }));
     wrap.querySelectorAll('[data-delete]').forEach(btn => {
       btn.addEventListener('click', () => deleteGroup(btn.dataset.delete));
     });

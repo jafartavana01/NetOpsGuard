@@ -4,12 +4,19 @@
 {% block breadcrumb %}TACACS+ / Devices{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content aaa-workspace">
   <div class="content-head">
     <h1>Network Devices</h1>
     <p class="content-sub">Saved here first; nothing reaches tac_plus-ng until you apply it on the Configuration page.</p>
   </div>
 
+  <nav class="aaa-tabs" aria-label="Device workflows">
+    <button type="button" class="btn-secondary btn-small" data-device-view="inventory" aria-pressed="true" aria-controls="device-inventory">Inventory</button>
+    <button type="button" class="btn-secondary btn-small" data-device-view="monitoring" aria-pressed="false" aria-controls="device-monitoring">Monitoring</button>
+    <button type="button" class="btn-secondary btn-small" data-device-view="provisioning" aria-pressed="false" aria-controls="device-provisioning">Scan &amp; provision</button>
+    <button type="button" class="btn-secondary btn-small" data-device-view="grants" aria-pressed="false" aria-controls="device-grants">Access grants</button>
+  </nav>
+  <section id="device-inventory" aria-label="Device inventory">
   <div class="toolbar">
     <span class="content-sub" id="device-count"></span>
     <button class="btn-primary btn-small" id="add-device-btn" style="width:auto;">+ Add device</button>
@@ -17,11 +24,13 @@
 
   <div class="status-card-grid" id="devices-kpis" style="margin-bottom:16px;"></div>
 
-  <div id="devices-table-wrap">
+  <div id="devices-table-wrap" data-aaa-table>
     <div class="empty-state">Loading devices…</div>
   </div>
 
-  <div class="content-head" style="margin-top:32px;">
+  </section>
+  <section id="device-monitoring" aria-label="Monitoring" hidden>
+  <div class="content-head">
     <h2>Monitoring</h2>
     <p class="content-sub">When enabled, a connection attempt from a device with no matching entry above is still logged rather than silently dropped, and shows up live below with a one-click Add. Devices added this way join the prebuilt "monitor" group. This does not affect any already-configured device's behavior.</p>
   </div>
@@ -51,11 +60,14 @@
     </div>
   </div>
 
-  <div class="content-head" style="margin-top:32px;">
+  </section>
+  <section id="device-provisioning" aria-label="Scan and provision" hidden>
+  <div class="content-head">
     <h2>Network Scan &amp; Provision</h2>
     <p class="content-sub">Scans an IP range for SSH-reachable hosts, then pushes Cisco IOS TACACS+ client configuration and adds them as devices. AAA commands are Cisco IOS specifically — not vendor-generic.</p>
   </div>
 
+  <div class="aaa-workflow" aria-label="Provisioning steps"><span>1 · Scan</span><span>2 · Review discovered hosts</span><span>3 · Select targets</span><span>4 · Confirm provisioning</span></div>
   <div class="panel panel-wide" style="margin-bottom:16px;border-color:var(--red);">
     <div class="panel-body" style="font-size:12px;color:var(--red);">
       ⚠ The SSH username/password below are used only for this scan/apply session — never stored. Applying pushes real configuration to real devices over SSH; review results carefully, especially for "Apply to all."
@@ -126,7 +138,9 @@
     </div>
   </div>
 
-  <div class="content-head" style="margin-top:32px;">
+  </section>
+  <section id="device-grants" aria-label="Access grants" hidden>
+  <div class="content-head">
     <h2>Access Grants</h2>
     <p class="content-sub">Grants a user group unrestricted privilege-15 access to a device or device group, taking precedence over anything in the Policies section — evaluated first, regardless of policy priority. For a specific individual, put them in a dedicated group with just that one member; direct per-user targeting isn't offered here since it has no confirmed way to compile into the real config.</p>
   </div>
@@ -139,6 +153,7 @@
   <div id="grants-table-wrap">
     <div class="empty-state">Loading access grants…</div>
   </div>
+  </section>
 </main>
 
 <div class="modal-backdrop" id="quickadd-device-modal-backdrop" hidden>
@@ -482,6 +497,12 @@
 
 {% block view_scripts %}
 <script>
+  document.querySelectorAll('[data-device-view]').forEach(btn=>btn.addEventListener('click',()=>{
+    document.querySelectorAll('[data-device-view]').forEach(b=>{
+      const active=b===btn; b.setAttribute('aria-pressed',String(active)); document.getElementById('device-'+b.dataset.deviceView).hidden=!active;
+    });
+    if(btn.dataset.deviceView==='provisioning')loadUnknown();
+  }));
   // Pre-rendered server-side via Jinja (see the top-of-file macro
   // import) since this markup is built client-side, per table row.
   const ICON_DEVICE_ROW = '{{ icons.icon("server", 15) }}';

@@ -1,0 +1,50 @@
+/* GUI-03: scoped to AAA views; reuses GUI-01 tokens. */
+.aaa-workspace { max-width:none; }
+.aaa-workspace .content-head { margin-bottom:18px; }
+.aaa-workspace .content-head h1 { font-size:24px; letter-spacing:-.025em; }
+.aaa-workspace .content-sub { line-height:1.5; }
+.aaa-workspace .status-card-grid { gap:10px; }
+.aaa-workspace .status-card { padding:12px 16px; }
+.aaa-workspace .data-table { font-size:12.5px; width:100%; }
+.aaa-workspace .data-table td,.aaa-workspace .data-table th { padding:11px 12px; vertical-align:top; }
+.aaa-workspace .data-table td { overflow-wrap:anywhere; }
+.aaa-workspace .data-table td.cell-actions { display:table-cell; min-width:196px; width:196px; white-space:normal; }
+.aaa-workspace .cell-actions button { white-space:nowrap; margin:0 4px 6px 0; padding:5px 8px; }
+.aaa-workspace .data-table td .cell-mono { white-space:nowrap; }
+.aaa-workspace .data-table th { white-space:nowrap; }
+.aaa-workspace .data-table tr[hidden] { display:none; }
+.aaa-workspace .cell-mono { font-family:var(--font-mono); font-size:12px; }
+.aaa-table-tools { display:flex; align-items:end; gap:10px; flex-wrap:wrap; padding:12px 0; }
+.aaa-table-tools label { display:grid; gap:5px; color:var(--text-dim); font-size:12px; flex:1; max-width:360px; }
+.aaa-table-tools input { width:100%; min-height:34px; }
+.aaa-table-tools .content-sub { margin-left:auto; align-self:center; }
+.aaa-table-scroll { width:100%; overflow:auto; border:1px solid var(--line); border-radius:var(--radius); }
+.aaa-table-scroll:focus-visible { outline:2px solid var(--signal); outline-offset:2px; }
+.aaa-workspace .data-table td.aaa-scope { min-width:170px; max-width:310px; line-height:1.55; }
+.aaa-outcome { display:inline-flex; align-items:center; gap:6px; font:600 12px var(--font-ui); white-space:nowrap; }
+.aaa-outcome svg { width:17px; height:17px; flex:none; }
+.aaa-success { color:var(--success); }.aaa-danger { color:var(--danger); }.aaa-neutral { color:var(--text-dim); }
+.aaa-help { border:1px solid var(--line); border-radius:var(--radius); margin-bottom:16px; color:var(--text-dim); font-size:12.5px; }
+.aaa-help summary { padding:10px 14px; cursor:pointer; color:var(--text-primary); }
+.aaa-help .panel-body { line-height:1.65; }
+.aaa-notice { padding:12px 16px; border-left:3px solid var(--warning); background:var(--bg-panel); margin-bottom:16px; font-size:13px; line-height:1.6; }
+.aaa-details h3 { font-size:12px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.06em; margin-top:22px; }
+.aaa-detail-value { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.7; }
+.aaa-drawer-backdrop { justify-content:flex-end; padding:0; }
+.aaa-drawer-backdrop > .modal { width:min(94vw,1060px); max-width:1060px!important; height:100vh; max-height:100vh!important; border-radius:0; margin:0; padding:28px; }
+.aaa-editor-heading { border-top:1px solid var(--line); margin:24px 0 14px; padding-top:16px; font-size:15px; }
+.aaa-workflow { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0; }
+.aaa-workflow span { padding:8px 14px; background:var(--bg-panel); border:1px solid var(--line); border-radius:var(--radius); font-size:12px; }
+.aaa-tabs { display:flex; gap:6px; flex-wrap:wrap; margin:16px 0 22px; border-bottom:1px solid var(--line); padding-bottom:12px; }
+.aaa-tabs button[aria-pressed="true"] { color:var(--signal); border-color:var(--signal); }
+.aaa-filter-panel .panel-body { padding:14px; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+.aaa-filter-panel .field-row { display:contents; }
+.aaa-filter-panel .field { margin:0; min-width:0; }
+.aaa-filter-panel .modal-actions { grid-column:1 / -1; position:static; margin:0!important; padding:12px 0 0; }
+.aaa-filter-panel input,.aaa-filter-panel select { width:100%; }
+.aaa-filter-panel .field-label { font-size:12px; }
+.aaa-timeline { padding-left:24px; line-height:1.8; }
+.aaa-timeline li { padding:5px 0 5px 8px; }
+.aaa-timeline code { white-space:pre-wrap; overflow-wrap:anywhere; }
+@media(min-width:1800px) { .aaa-workspace .data-table td,.aaa-workspace .data-table th { padding:12px 18px; } }
+@media(max-width:900px) { .aaa-filter-panel .panel-body { grid-template-columns:repeat(2,minmax(0,1fr)); }.aaa-workspace .field-row { flex-wrap:wrap; }.aaa-workspace .field-row>.field { flex:1 1 210px; }.aaa-table-scroll .data-table { min-width:800px; }.aaa-table-tools .content-sub { margin-left:0; }.aaa-drawer-backdrop > .modal { width:100vw; padding:18px; } }

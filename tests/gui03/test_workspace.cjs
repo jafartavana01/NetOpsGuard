@@ -1,0 +1,25 @@
+const assert=require('node:assert/strict');
+const ui=require('../../app/static/js/aaa-workspace.js');
+const checks=[];
+function test(name,fn){fn();checks.push(name);}
+test('permit is green with check-circle',()=>{assert.match(ui.outcomeBadge('permit'),/aaa-success/);assert.match(ui.outcomeBadge('permit'),/Permitted/);assert.equal(ui.outcome('permit').mark,'check');});
+test('deny is red with x-circle',()=>{assert.match(ui.outcomeBadge('deny'),/aaa-danger/);assert.equal(ui.outcome('deny').mark,'x');});
+test('unknown and unsupported values never imply success',()=>{for(const x of [null,'','success','ok','error','FAIL','<img>'])assert.equal(ui.outcome(x).label,'Unknown');});
+test('authentication outcome vocabulary remains distinct',()=>{assert.equal(ui.outcome('success','authentication').label,'Success');assert.equal(ui.outcome('permit','authentication').label,'Unknown');});
+test('outcome attributes are escaped',()=>assert.ok(!ui.outcomeBadge('" onmouseover="x').includes('title="Parsed result: "')));
+const refs={user_group:[{id:'g',name:'ops',authority:'EXTERNAL'}],device:[{id:'d',name:'R1'}],device_group:[{id:'dg',name:'edge'}]};
+const c=(type,id,op='equal')=>({object_type:type,referenced_object_id:id,operator:op});
+const group=(op,conditions=[],child_groups=[])=>({logical_operator:op,conditions,child_groups});
+test('legacy device AND device group preserved',()=>assert.match(ui.policySummary({condition_device_id:'d',condition_device_name:'R1',condition_device_group_id:'dg',condition_device_group_name:'edge'}).where,/Device = R1 AND Device group = edge/));
+test('missing legacy reference is never Any',()=>assert.match(ui.policySummary({condition_group_id:'gone'}).who,/Unresolved/));
+test('intentional partial unrestricted dimension described',()=>assert.match(ui.policySummary({condition_device_id:'d',condition_device_name:'R1'}).who,/Any/));
+test('tree takes precedence over legacy fields',()=>assert.ok(!ui.policySummary({has_condition_tree:true,condition_group_name:'ignored'},group('AND',[c('device','d')]),refs).full.includes('ignored')));
+test('nested AND OR retains parentheses',()=>assert.equal(ui.treeSummary(group('AND',[c('user_group','g')],[group('OR',[c('device','d'),c('device_group','dg')])]),refs).text,'(Group = ops [EXTERNAL] AND (Device = R1 OR Device group = edge))'));
+test('mixed OR dimensions not projected into misleading independent scopes',()=>assert.equal(ui.policySummary({has_condition_tree:true},group('OR',[c('user_group','g'),c('device','d')]),refs).who,'Complex conditions'));
+test('missing root never unrestricted',()=>assert.match(ui.policySummary({has_condition_tree:true},null,refs).who,/Unresolved/));
+test('empty tree never unrestricted',()=>assert.match(ui.policySummary({has_condition_tree:true},group('AND'),refs).where,/Unresolved/));
+test('unresolved reference does not use cached name',()=>assert.match(ui.treeSummary(group('AND',[{...c('device','gone'),value:'cached R1'}]),refs).text,/Unresolved reference/));
+test('unsupported leaf explicit',()=>assert.match(ui.treeSummary(group('AND',[c('imaginary','x')]),refs).text,/Unsupported/));
+test('NOT preserves AND-combination semantics',()=>assert.equal(ui.treeSummary(group('NOT',[c('device','d'),c('device_group','dg')]),refs).text,'NOT (Device = R1 AND Device group = edge)'));
+test('source CIDR supported display operator',()=>assert.match(ui.treeSummary(group('AND',[{object_type:'source_ip',operator:'is_in_cidr',value:'192.0.2.0/24'}])).text,/in CIDR/));
+console.log(JSON.stringify({passed:checks.length,checks},null,2));

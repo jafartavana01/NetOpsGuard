@@ -4,13 +4,13 @@
 {% block breadcrumb %}TACACS+ / Policies{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content aaa-workspace">
   <div class="content-head">
     <h1>Authorization Policies</h1>
-    <p class="content-sub">A policy is self-contained: it declares both when it applies (conditions below) and what it grants (privilege level + referenced Command Sets). Enabled policies are evaluated in ascending priority order — the first full match wins. Drag rows by the <span class="cell-mono">⠿</span> handle to reorder priority — every policy below the drop point is automatically renumbered.</p>
+    <p class="content-sub">Who can access which devices, and under which command rules. Enabled policies are evaluated in ascending priority order; the first full match wins.</p>
   </div>
 
-  <div class="panel panel-wide" style="margin-bottom:20px;">
+  <details class="aaa-help"><summary>Policy scope, priorities and privilege levels</summary>
     <div class="panel-body" style="font-size:12.5px;color:var(--text-dim);">
       <strong style="color:var(--text-primary);">Conditions:</strong> leave a condition as "— Any —" to match everyone/everywhere on that dimension. A policy with no conditions at all matches unconditionally — useful as a low-priority catch-all.
       <br><br>
@@ -18,7 +18,8 @@
       <br><br>
       <strong style="color:var(--text-primary);">On privilege levels:</strong> Cisco IOS only meaningfully distinguishes level 1 (user) and 15 (enable) out of the box. Intermediate levels only do anything if the device itself has custom <code>privilege exec level</code> mappings configured.
     </div>
-  </div>
+      <p class="panel-body">Drag unfiltered rows to reorder, or edit Priority for keyboard access. Dragging is unavailable while filtering or paging. Scope summaries describe stored intent, not candidate validation or deployed state.</p>
+  </details>
 
   <div class="toolbar">
     <span class="content-sub" id="policy-count"></span>
@@ -27,17 +28,18 @@
 
   <div class="status-card-grid" id="policies-kpis" style="margin-bottom:16px;"></div>
 
-  <div id="policies-table-wrap">
+  <div id="policies-table-wrap" data-aaa-table>
     <div class="empty-state">Loading policies…</div>
   </div>
 </main>
 
-<div class="modal-backdrop" id="policy-modal-backdrop" hidden>
+<div class="modal-backdrop aaa-drawer-backdrop" id="policy-modal-backdrop" hidden>
   <div class="modal modal-lg" style="max-width: min(95vw, 820px)">
     <button type="button" class="modal-close-btn" id="policy-modal-close-btn" aria-label="Close">{{ icons.icon('x', 18) }}</button>
     <h2 id="policy-modal-title">Add policy</h2>
     <form id="policy-form">
       <input type="hidden" id="policy-id">
+      <h3 class="aaa-editor-heading">1 · Basics</h3>
       <div class="field-row">
         <label class="field">
           <span class="field-label">Name</span>
@@ -60,7 +62,7 @@
         <span>Enabled</span>
       </label>
 
-      <div class="field-label" style="margin-bottom:6px;">Conditions</div>
+      <h3 class="aaa-editor-heading">2–3 · Identity and device scope</h3>
       <p class="field-hint" style="margin-top:0;margin-bottom:14px;">This policy applies when the connecting user (or their group) is one of the entries on the left, AND the target device (or its device group) is one of the entries on the right. Leave a list empty to match any.</p>
 
       <div class="field-row" style="align-items:flex-start;">
@@ -88,9 +90,10 @@
       </div>
 
       <div id="advanced-conditions-section" hidden style="margin-bottom:18px;">
+        <h3 class="aaa-editor-heading">Advanced conditions · exact Boolean scope</h3>
         <div class="panel panel-wide" style="margin-bottom:14px;">
           <div class="panel-body" style="font-size:12px;color:var(--text-dim);">
-            Replaces the Users/Groups and Devices lists above entirely — saving from here uses only what's built below. Source IP and NOT conditions are only available here; NOT conditions evaluate correctly in the Simulator but can't compile into the real configuration yet.
+            Replaces the simple scope lists entirely. Parentheses and AND / OR / NOT are significant. Saving is validated by the server; unsupported restrictions cannot be deployed. Simulator output is advisory, not proof of compilation.
           </div>
         </div>
 
@@ -109,6 +112,7 @@
         <div id="nested-groups-list" style="margin-top:14px;"></div>
       </div>
 
+      <h3 class="aaa-editor-heading">4 · Command authorization</h3>
       <div class="field-row">
         <label class="field">
           <span class="field-label">Privilege level</span>
@@ -143,6 +147,8 @@
       <input type="text" id="command-sets-filter" placeholder="Filter by name…" style="margin-bottom:8px;">
       <div id="command-sets-checklist" style="margin-bottom:16px;"></div>
 
+      <h3 class="aaa-editor-heading">5–6 · Review and save</h3>
+      <p class="content-sub">Review scope, command sets and default action above. This save sends the complete policy and condition tree in one atomic operation. Saving does not apply the daemon configuration.</p>
       <label class="field">
         <span class="field-label">Change description (optional)</span>
         <input type="text" id="policy-change-description" placeholder="e.g. Widened access for on-call rotation">
@@ -737,29 +743,20 @@
     }
 
     const rows = policies.map((p, i) => {
-      const conditionParts = [];
-      if (p.condition_group_name) conditionParts.push(`group=${p.condition_group_name}`);
-      if (p.condition_device_name) conditionParts.push(`device=${p.condition_device_name}`);
-      if (p.condition_device_group_name) conditionParts.push(`device-group=${p.condition_device_group_name}`);
-      // has_condition_tree is checked FIRST -- a policy migrated to the
-      // Advanced condition builder has none of the legacy flat fields
-      // set at all (they're mutually exclusive models), so relying on
-      // conditionParts alone here always showed "unconditional" for
-      // any such policy, even one with real, non-trivial conditions.
-      const conditionsText = p.has_condition_tree
-        ? 'advanced conditions (see Edit)'
-        : (conditionParts.length ? conditionParts.join(', ') : 'unconditional');
+      const summary = AAAWorkspace.policySummary(p, policyOverviewTrees.get(p.id), overviewReferences());
 
       return `
       <tr draggable="true" data-row-index="${i}" class="draggable-row">
         <td class="drag-handle" title="Drag to reorder priority">⠿</td>
-        <td>${escapeHtml(p.name)}</td>
+        <td><strong>${escapeHtml(p.name)}</strong><div class="content-sub">${escapeHtml(p.description || '')}</div></td>
         <td class="cell-mono">${p.priority}</td>
         <td>${p.enabled ? '<span class="badge badge-on">Enabled</span>' : '<span class="badge badge-off">Disabled</span>'}</td>
-        <td class="cell-mono">${escapeHtml(conditionsText)}</td>
-        <td>${p.command_sets.length ? p.command_sets.map(cs => escapeHtml(cs.name)).join(', ') : '<span class="content-sub">none</span>'}</td>
-        <td class="cell-mono">priv ${p.default_priv_lvl}, ${p.default_action}${p.requires_manual_approval ? ' <span class="badge" style="border-color:var(--red);color:var(--red);">MANUAL</span>' : ''}</td>
+        <td class="aaa-scope">${escapeHtml(summary.who)}</td>
+        <td class="aaa-scope">${escapeHtml(summary.where)}</td>
+        <td>${p.command_sets.length ? p.command_sets.map(cs => escapeHtml(cs.name)).join(', ') : '<span class="content-sub">No command sets</span>'}<div class="cell-mono">Privilege ${escapeHtml(p.default_priv_lvl ?? 'Unknown')}</div>${p.requires_manual_approval ? '<span class="badge badge-warning">Manual approval</span>' : ''}</td>
+        <td>${['deny','permit'].includes(p.default_action) ? AAAWorkspace.outcomeBadge(p.default_action) : 'Unknown'}</td>
         <td class="cell-actions">
+          <button class="btn-secondary btn-small" data-scope="${p.id}">Scope</button>
           <button class="btn-secondary btn-small" data-edit="${p.id}">Edit</button>
           <button class="btn-secondary btn-small" data-history="${p.id}">History</button>
           <button class="btn-danger btn-small" data-delete="${p.id}">Delete</button>
@@ -770,7 +767,7 @@
     wrap.innerHTML = `
       <table class="data-table">
         <thead>
-          <tr><th></th><th>Name</th><th>Priority</th><th>Status</th><th>Conditions</th><th>Command Sets</th><th>Grants</th><th></th></tr>
+          <tr><th aria-label="Reorder"></th><th>Policy</th><th>Priority</th><th>Status</th><th>Who</th><th>Where</th><th>Access</th><th>Default</th><th>Actions</th></tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
@@ -779,6 +776,11 @@
     wrap.querySelectorAll('[data-edit]').forEach(btn => {
       btn.addEventListener('click', () => openModal(policies.find(p => p.id === btn.dataset.edit)));
     });
+    wrap.querySelectorAll('[data-scope]').forEach(btn => btn.addEventListener('click', () => {
+      const p=policies.find(p=>p.id===btn.dataset.scope);
+      const s=AAAWorkspace.policySummary(p,policyOverviewTrees.get(p.id),overviewReferences());
+      AAAWorkspace.details('Policy scope — '+p.name,[['Stored condition logic',s.full],['Scope model',p.has_condition_tree?'Condition tree (takes precedence over legacy fields)':'Legacy fields, combined with AND'],['Deployment','This is a read-only description, not an evaluation. Check Configuration for candidate diagnostics and apply status.'],['Command fallback',p.default_action ?? 'Unknown'],['Approval',p.requires_manual_approval?'Manual approval required':'No manual approval required']]);
+    }));
     wrap.querySelectorAll('[data-history]').forEach(btn => {
       btn.addEventListener('click', () => openHistory(policies.find(p => p.id === btn.dataset.history)));
     });
@@ -863,10 +865,19 @@
       : '<option value="">— No Command Sets exist yet —</option>';
   }
 
+  const policyOverviewTrees = new Map();
+  function overviewReferences() { return {user:allUsers,user_group:allGroups,device:allDevices,device_group:allDeviceGroups}; }
   async function loadPolicies() {
     const res = await AAAPlatform.authedFetch('/api/policies');
     if (res.status === 401) { window.location.href = '/login'; return; }
+    if (!res.ok) { document.getElementById('policies-table-wrap').textContent='Could not load policies. Reload to retry.'; return; }
     policies = await res.json();
+    policyOverviewTrees.clear();
+    await Promise.all(policies.filter(p=>p.has_condition_tree).map(async p=>{
+      try { const r=await AAAPlatform.authedFetch(`/api/policies/${p.id}/condition-tree`);
+        if(r.ok) { const data=await r.json(); if(data.has_migrated)policyOverviewTrees.set(p.id,data.tree); }
+      } catch (_) { /* Missing detail must remain unresolved in the overview. */ }
+    }));
     renderTable();
   }
 

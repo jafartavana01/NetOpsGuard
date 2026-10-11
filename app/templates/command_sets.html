@@ -4,31 +4,32 @@
 {% block breadcrumb %}TACACS+ / Command Sets{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content aaa-workspace">
   <div class="content-head">
     <h1>Command Sets</h1>
     <p class="content-sub">Reusable, named permit/deny rule collections — a Policy references one or more Command Sets instead of duplicating rules. Manage which policies use a set, and view its usage before deleting it.</p>
   </div>
 
-  <div class="panel panel-wide" style="margin-bottom:20px;">
+  <p class="aaa-notice">Deny rules take precedence across referenced sets. Unmatched commands use the policy's default action.</p>
+  <details class="aaa-help"><summary>Rule precedence and regex matching</summary>
     <div class="panel-body" style="font-size:12.5px;color:var(--text-dim);">
       <strong style="color:var(--text-primary);">Denied commands always win</strong> — across every set a policy references, not just within one set. A broad <code>permit ^show</code> in one set and a specific <code>deny ^show running-config</code> in another still results in that one command being denied.
       <br><br>
       <strong style="color:var(--text-primary);">Patterns are regex, not wildcards.</strong> To match every "show" command, use <code>^show</code> — not <code>show*</code>, which in regex means "sho" followed by zero-or-more "w" characters, not "show anything." A few common patterns: <code>^show</code> (all show commands), <code>^configure terminal</code> (entering config mode), <code>^reload$</code> (exactly the reload command, nothing after it).
     </div>
-  </div>
+  </details>
 
   <div class="toolbar">
     <span class="content-sub" id="set-count"></span>
     <button class="btn-primary btn-small" id="add-set-btn" style="width:auto;">+ Add command set</button>
   </div>
 
-  <div id="sets-table-wrap">
+  <div id="sets-table-wrap" data-aaa-table>
     <div class="empty-state">Loading command sets…</div>
   </div>
 </main>
 
-<div class="modal-backdrop" id="set-modal-backdrop" hidden>
+<div class="modal-backdrop aaa-drawer-backdrop" id="set-modal-backdrop" hidden>
   <div class="modal modal-lg" style="max-width: min(95vw, 900px)">
     <button type="button" class="modal-close-btn" id="set-modal-close-btn" aria-label="Close">{{ icons.icon('x', 18) }}</button>
     <h2 id="set-modal-title">Add command set</h2>
@@ -170,12 +171,13 @@
       const permitCount = cs.rules.filter(r => r.action === 'permit').length;
       return `
       <tr>
-        <td>${escapeHtml(cs.name)}</td>
+        <td><strong>${escapeHtml(cs.name)}</strong><div class="content-sub">${escapeHtml(cs.description || '')}</div></td>
         <td class="cell-mono">${escapeHtml(cs.vendor)}</td>
         <td>${cs.enabled ? '<span class="badge badge-on">Enabled</span>' : '<span class="badge badge-off">Disabled</span>'}</td>
-        <td class="cell-mono">${permitCount} permit / ${denyCount} deny</td>
+        <td><span class="aaa-success">${permitCount} permit</span> / <span class="aaa-danger">${denyCount} deny</span></td>
         <td class="cell-mono">${cs.policy_count} ${cs.policy_count === 1 ? 'policy' : 'policies'}</td>
         <td class="cell-actions">
+          <button class="btn-secondary btn-small" data-rules="${cs.id}">Rules</button>
           <button class="btn-secondary btn-small" data-edit="${cs.id}">Edit</button>
           <button class="btn-danger btn-small" data-delete="${cs.id}">Delete</button>
         </td>
@@ -194,6 +196,12 @@
     wrap.querySelectorAll('[data-edit]').forEach(btn => {
       btn.addEventListener('click', () => openModal(commandSets.find(cs => cs.id === btn.dataset.edit)));
     });
+    wrap.querySelectorAll('[data-rules]').forEach(btn=>btn.addEventListener('click',async()=>{
+      const cs=commandSets.find(cs=>cs.id===btn.dataset.rules);
+      let references='Policy references unavailable';
+      try { const r=await AAAPlatform.authedFetch('/api/policies'); if(r.ok)references=(await r.json()).filter(p=>(p.command_sets||[]).some(s=>s.id===cs.id)).map(p=>p.name).join(', ')||'None reported'; } catch(_){}
+      AAAWorkspace.details('Command set — '+cs.name,[['Description',cs.description],['Evaluation','Deny rules precede permit rules across referenced sets. If no rule matches, the policy default applies.'],['Rules (stored order)',cs.rules.map((r,i)=>`${i+1}. ${r.action}  ${r.command_pattern}`).join('\n')||'No rules'],['Referencing policies',references]]);
+    }));
     wrap.querySelectorAll('[data-delete]').forEach(btn => {
       btn.addEventListener('click', () => deleteSet(btn.dataset.delete));
     });

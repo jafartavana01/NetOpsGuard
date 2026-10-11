@@ -4,19 +4,19 @@
 {% block breadcrumb %}TACACS+ / Accounting{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content aaa-workspace">
       <div class="content-head">
         <h1>Accounting</h1>
-        <p class="content-sub">Parsed from tac_plus-ng's own accounting log, using a format this platform defines itself — see the note below on what that does and doesn't guarantee.</p>
+        <p class="content-sub">Command activity from the accounting log. Result badges reflect the parsed result, not command execution success.</p>
       </div>
 
-      <div class="panel panel-wide" style="margin-bottom:20px;">
+      <details class="aaa-help"><summary>Timestamp and accounting evidence</summary>
         <div class="panel-body" style="font-size:12.5px;color:var(--text-dim);">
-          <strong style="color:var(--text-primary);">On timestamps:</strong> the eight data fields (user, device, command, etc.) come from a format string this platform controls, so they parse reliably. The leading timestamp on each line is tac_plus-ng's own addition and its exact format wasn't independently confirmed — it's parsed on a best-effort basis. Rows where it didn't parse still show in full; they're just excluded from date-range filtering rather than guessed at.
+          <strong style="color:var(--text-primary);">On timestamps:</strong> the parser recognizes supported daemon timestamps and preserves raw records when parsing fails. Records with unknown timestamps remain visible even when date filters are used; they cannot be safely placed inside or outside a time range. Result filters match the raw result token exactly (case-insensitive); “unknown” is not an aggregate of every unreadable token.
         </div>
-      </div>
+      </details>
 
-      <div class="panel panel-wide" style="margin-bottom:20px;">
+      <div class="panel panel-wide aaa-filter-panel" style="margin-bottom:20px;">
         <div class="panel-body">
           <div class="field-row">
             <label class="field">
@@ -29,7 +29,8 @@
             </label>
             <label class="field">
               <span class="field-label">Result</span>
-              <input type="text" id="filter-result" placeholder="e.g. success">
+              <input type="text" id="filter-result" list="accounting-results" placeholder="All / raw result">
+              <datalist id="accounting-results"><option value="permit">Permitted</option><option value="deny">Denied</option><option value="unknown">Unknown (literal result)</option></datalist>
             </label>
           </div>
           <div class="field-row">
@@ -42,8 +43,8 @@
               <input type="datetime-local" id="filter-until">
             </label>
             <label class="field">
-              <span class="field-label">Search</span>
-              <input type="text" id="filter-search" placeholder="anywhere in the line">
+              <span class="field-label">Command / raw-line search</span>
+              <input type="text" id="filter-search" placeholder="Command or text anywhere in the line">
             </label>
           </div>
           <div class="field-row">
@@ -70,7 +71,7 @@
 
       <div class="status-card-grid" id="accounting-kpis" style="margin-bottom:16px;"></div>
 
-      <div id="accounting-table-wrap">
+      <div id="accounting-table-wrap" data-aaa-table>
         <div class="empty-state">Loading accounting records…</div>
       </div>
 </main>
@@ -246,9 +247,9 @@
           <td>${escapeHtml(r.nas || '—')}</td>
           <td class="cell-mono">${escapeHtml(r.nac || '—')}</td>
           <td>${escapeHtml(r.accttype || '—')}</td>
-          <td>${escapeHtml(r.result || '—')}</td>
+          <td>${AAAWorkspace.outcomeBadge(r.result)}</td>
           <td class="cell-mono">${escapeHtml(displayCommand(r.cmd) || r.service || '—')}</td>
-          <td class="cell-actions">${canPromote ? `<button class="btn-secondary btn-small" data-promote="${i}">Promote</button>` : ''}</td>
+          <td class="cell-actions"><button class="btn-secondary btn-small" data-record="${i}">Evidence</button> ${canPromote ? `<button class="btn-secondary btn-small" data-promote="${i}">Promote</button>` : ''}</td>
         </tr>
       `;
     }).join('');
@@ -265,6 +266,10 @@
     wrap.querySelectorAll('[data-promote]').forEach(btn => {
       btn.addEventListener('click', () => openPromoteModal(accountingRecords[parseInt(btn.dataset.promote, 10)]));
     });
+    wrap.querySelectorAll('[data-record]').forEach(btn => btn.addEventListener('click', () => {
+      const r=accountingRecords[Number(btn.dataset.record)];
+      AAAWorkspace.details('Accounting evidence', [['Parsed result',r.result || 'Unknown'],['Command / service',r.cmd || r.service],['Raw record',r.raw_line],['Interpretation','Authorization result is not proof of command execution. Unrecognized result tokens remain Unknown.']]);
+    }));
   }
 
   async function loadRecords() {
@@ -276,7 +281,9 @@
     document.getElementById('accounting-kpis').innerHTML = '';
 
     const query = buildQuery();
-    const res = await AAAPlatform.authedFetch('/api/tacacs-accounting' + (query ? '?' + query : ''));
+    let res;
+    try { res = await AAAPlatform.authedFetch('/api/tacacs-accounting' + (query ? '?' + query : '')); }
+    catch (_) { wrap.innerHTML='<div class="empty-state" role="alert">Could not load accounting records. Check connectivity and Apply filters to retry.</div>'; return; }
     if (res.status === 401) { window.location.href = '/login'; return; }
     if (!res.ok) {
       wrap.innerHTML = '<div class="empty-state">Could not load accounting records.</div>';

@@ -3,12 +3,13 @@
 {% block breadcrumb %}TACACS+ / Effective Access{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content aaa-workspace">
   <div class="content-head">
     <h1>Effective Access</h1>
-    <p class="content-sub">What can a user reach, or who can reach a device — computed by running every device (or user) through the same policy engine that generates the real configuration. Pure database analysis; nothing here contacts a device.</p>
+    <p class="content-sub">Explore stored policy matches for a user or device. Directory lookups may be used for external users; no connection is made to the device.</p>
   </div>
 
+  <p class="aaa-notice"><strong>Advisory only · not verified deployed access.</strong> This evaluator does not certify compiler support, external authority or candidate validity. Unresolved and unsupported restrictions require Configuration review. A simulated match is not a guarantee of access.</p>
   <div class="panel panel-wide" style="margin-bottom:20px;">
     <div class="panel-body">
       <div class="field-row" style="align-items:flex-end;">
@@ -29,12 +30,15 @@
     </div>
   </div>
 
+  <p id="analysis-candidate-context" class="aaa-notice aaa-detail-value" role="status"></p>
   <div id="access-result"></div>
 </main>
 {% endblock %}
 
 {% block view_scripts %}
 <script>
+  AAAWorkspace.candidateContext(document.getElementById('analysis-candidate-context'));
+  AAAWorkspace.suggestions(document.getElementById('lookup-name'),'/api/tacacs-users','username');
   function escapeHtml(s) {
     // Escapes quotes as well as angle brackets, so the result is safe
     // inside an HTML ATTRIBUTE and not only in text position. The
@@ -51,6 +55,8 @@
 
   document.getElementById('lookup-mode').addEventListener('change', (e) => {
     document.getElementById('lookup-label').textContent = e.target.value === 'user' ? 'Username' : 'Device name';
+    document.getElementById('lookup-name').removeAttribute('list');
+    AAAWorkspace.suggestions(document.getElementById('lookup-name'),e.target.value==='user'?'/api/tacacs-users':'/api/devices',e.target.value==='user'?'username':'name');
   });
 
   async function findIdByName(kind, name) {
@@ -116,7 +122,7 @@
     box.innerHTML = `
       <div class="content-head">
         <h2>${isUser ? 'What can' : 'Who can access'} <span class="cell-mono">${escapeHtml(data.subject_name)}</span> ${isUser ? 'access?' : ''}</h2>
-        <p class="content-sub">${data.total_reachable} of ${isUser ? data.total_devices_checked + ' devices' : data.total_users_checked + ' users'} checked are reachable.</p>
+        <p class="content-sub">${data.total_reachable} of ${isUser ? data.total_devices_checked + ' devices' : data.total_users_checked + ' users'} have evaluator matches. Deployed access is not verified.</p>
       </div>
       <div class="panel panel-wide" style="margin-bottom:20px;">
         <div class="panel-body mono">${byPrivRows || '<div class="content-sub">No access at any privilege level.</div>'}</div>

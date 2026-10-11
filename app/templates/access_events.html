@@ -4,7 +4,7 @@
 {% block breadcrumb %}TACACS+ / Access Events{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content aaa-workspace">
   <div class="content-head">
     <h1>Access Events</h1>
     <p class="content-sub">Who logged in, who was refused, and where — filtered by user, device, device group and outcome.</p>
@@ -90,7 +90,7 @@
     </div>
   </div>
 
-  <div id="ae-wrap"><div class="empty-state">Loading…</div></div>
+  <div id="ae-wrap" class="aaa-table-scroll" tabindex="0" role="region" aria-label="Access events"><div class="empty-state">Loading…</div></div>
   <div class="toolbar" style="margin-top:10px;">
     <span class="content-sub" id="ae-page-info"></span>
     <div style="display:flex;gap:8px;">
@@ -165,22 +165,25 @@
     wrap.innerHTML =
       '<table class="data-table"><thead><tr><th>Time</th><th>Outcome</th><th>User</th><th>Device</th>' +
       '<th>Source IP</th>' + (showCommand ? '<th>Command</th>' : '') +
-      (kind === 'authentication' ? '<th>Message</th>' : '<th>Raw result</th>') + '</tr></thead><tbody>' +
-      slice.map((r) => {
+      (kind === 'authentication' ? '<th>Message</th>' : '<th>Raw result</th>') + '<th>Details</th></tr></thead><tbody>' +
+      slice.map((r, index) => {
         const o = OUTCOME[r.outcome] || OUTCOME.unknown;
         return '<tr><td class="content-sub">' +
           (r.timestamp ? new Date(r.timestamp).toLocaleString() : '\u2014') + '</td>' +
           // Marker and word, never colour alone.
-          '<td><span class="cdiff-type is-' + (r.outcome === 'success' ? 'added' : (r.outcome === 'failure' ? 'removed' : 'modified')) + '">' +
-          '<span class="cdiff-type-mark">' + o.mark + '</span>' + o.label + '</span></td>' +
+          '<td>' + (kind === 'authentication' ? AAAWorkspace.outcomeBadge(r.outcome,'authentication') : AAAWorkspace.outcomeBadge(r.result)) + '</td>' +
           '<td>' + esc(r.user || '\u2014') + '</td>' +
           '<td class="cell-mono">' + esc(r.device || '\u2014') + '</td>' +
           '<td class="cell-mono content-sub">' + esc(r.source_ip || '\u2014') + '</td>' +
           (showCommand ? '<td class="cell-mono content-sub">' + esc(r.command || '\u2014') + '</td>' : '') +
           // The raw field is shown so an operator can see what the
           // classification was derived FROM, not just its verdict.
-          '<td class="cell-mono content-sub">' + esc(r.result || '\u2014') + '</td></tr>';
+          '<td class="cell-mono content-sub">' + esc(r.result || '\u2014') + '</td><td><button type="button" class="btn-secondary btn-small" data-event-detail="'+index+'">Evidence</button></td></tr>';
       }).join('') + '</tbody></table>';
+    wrap.querySelectorAll('[data-event-detail]').forEach(btn=>btn.addEventListener('click',()=>{
+      const r=slice[Number(btn.dataset.eventDetail)];
+      AAAWorkspace.details('Access event evidence',[['Event type',kind==='authentication'?'Authentication':r.kind || kind],['Reported outcome',r.outcome || 'Unknown'],['Raw result',r.result],['User / device',`${r.user || 'Unknown'} / ${r.device || 'Unknown'}`],['Source',r.source_ip],['Command',r.command || 'Not supplied'],['Timestamp',r.timestamp || 'Unparsed / unavailable'],['Interpretation',kind==='authentication'?'Credential-check outcome, not a command authorization decision.':'Authorization log evidence, not proof of command execution.']]);
+    }));
 
     document.getElementById('ae-page-info').textContent =
       'Showing ' + (page * PAGE_SIZE + 1) + '\u2013' + Math.min((page + 1) * PAGE_SIZE, rows.length) +

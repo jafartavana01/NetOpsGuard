@@ -4,7 +4,7 @@
 {% block breadcrumb %}TACACS+ / Command Categories{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content aaa-workspace">
   <div class="content-head">
     <h1>Command Categories</h1>
     <p class="content-sub">A vendor-scoped, purely observational taxonomy for command rules — used for filtering and reporting. Assigning a category to a rule never changes what it permits or denies.</p>
@@ -15,7 +15,8 @@
     <button class="btn-primary btn-small" id="add-category-btn" style="width:auto;">+ Add category</button>
   </div>
 
-  <div id="categories-table-wrap">
+  <p class="aaa-notice">Categories organize command rules and risk labels; they do not independently permit or deny commands. This version supports creation and deletion, not category editing.</p>
+  <div id="categories-table-wrap" data-aaa-table>
     <div class="empty-state">Loading categories…</div>
   </div>
 </main>

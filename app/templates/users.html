@@ -4,7 +4,7 @@
 {% block breadcrumb %}TACACS+ / Users{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content aaa-workspace">
       <div class="content-head">
         <h1>TACACS+ Users</h1>
         <p class="content-sub">Saved here first; nothing reaches tac_plus-ng until you apply it on the Configuration page.</p>
@@ -17,7 +17,7 @@
 
       <div class="status-card-grid" id="users-kpis" style="margin-bottom:16px;"></div>
 
-      <div id="users-table-wrap">
+      <div id="users-table-wrap" data-aaa-table>
         <div class="empty-state">Loading users…</div>
       </div>
 
@@ -248,12 +248,13 @@
 
     const rows = tacacsUsers.map(u => `
       <tr data-user-row="${u.id}">
-        <td>${escapeHtml(u.username)}${u.auth_source === 'ad' ? ' <span class="badge">AD</span>' : ''}</td>
+        <td><strong>${escapeHtml(u.username)}</strong><div class="content-sub">${u.auth_source === 'ad' ? 'Active Directory identity' : u.auth_source === 'local' ? 'Local identity' : 'Identity source unknown'}</div></td>
         <td>${escapeHtml(u.full_name || '—')}</td>
-        <td>${escapeHtml(u.group_name || '—')}</td>
+        <td>${escapeHtml(u.group_name || 'No stored group')} ${u.auth_source==='ad'?'<div class="content-sub">Stored association · directory membership may differ</div>':''}</td>
         <td>${u.enabled ? '<span class="badge badge-on">Enabled</span>' : '<span class="badge badge-off">Disabled</span>'}</td>
         <td>${u.allowed_source_ips ? '<span class="badge badge-off" title="Saved but not enforced yet — see the user\'s edit form">Trusted hosts set (not enforced)</span>' : '<span class="content-sub">—</span>'}</td>
         <td class="cell-actions">
+          <button class="btn-secondary btn-small" data-user-detail="${u.id}">Details</button>
           <button class="btn-secondary btn-small" data-edit="${u.id}">Edit</button>
           <button class="btn-danger btn-small" data-delete="${u.id}">Delete</button>
         </td>
@@ -269,6 +270,11 @@
       </table>
     `;
 
+    wrap.querySelectorAll('[data-user-detail]').forEach(btn=>btn.addEventListener('click',async()=>{
+      const u=tacacsUsers.find(u=>u.id===btn.dataset.userDetail);
+      btn.disabled=true;const references=await AAAWorkspace.policyReferences(u.id,u.group_id);btn.disabled=false;if(!btn.isConnected)return;
+      AAAWorkspace.details('Identity — '+u.username,[['Identity source',u.auth_source],['Stored group',u.group_name || 'None'],['Status',u.enabled?'Enabled':'Disabled'],['Membership evidence',u.auth_source==='ad'?'Directory membership is evaluated externally; this record is not a full directory inventory.':'This is a stored local user record, not a statement of exclusive group authority.'],['Policies mentioning this user or stored group',references],['Policy investigation','Use Policies → Scope to inspect restrictions, or Effective Access for advisory analysis. Neither this record nor a stored group proves deployed access.']]);
+    }));
     wrap.querySelectorAll('[data-edit]').forEach(btn => {
       btn.addEventListener('click', () => openModal(tacacsUsers.find(u => u.id === btn.dataset.edit)));
     });

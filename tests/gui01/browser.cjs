@@ -23,6 +23,8 @@ let serverError='';server.stderr.on('data',d=>serverError+=d);
    await page.goto('http://127.0.0.1:8765'+url);await page.waitForTimeout(500);
    // Baseline Devices does not load this panel on entry; use its existing Refresh action.
    if(name==='devices'){
+    // GUI-03 moves the existing workflow behind its explicit navigation tab.
+    await page.locator('[data-device-view="provisioning"]').click();
     await page.locator('#unknown-refresh-btn').click();
     await page.waitForFunction(()=>document.querySelector('#unknown-wrap').textContent.includes('Nothing unrecognised'));
     await page.evaluate(()=>window.scrollTo(0,0));

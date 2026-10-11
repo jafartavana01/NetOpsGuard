@@ -4,17 +4,17 @@
 {% block breadcrumb %}TACACS+ / Sessions{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content aaa-workspace">
   <div class="content-head">
     <h1>TACACS+ Sessions</h1>
-    <p class="content-sub">Correlated from accounting records sharing the same device and port — start and stop records on the same device+port are paired into one session.</p>
+    <p class="content-sub">Observed accounting sessions, correlated by device and port. Active means a start was seen without a matching stop—not verified live connectivity.</p>
   </div>
 
-  <div class="panel panel-wide" style="margin-bottom:20px;">
+  <details class="aaa-help"><summary>How session correlation works</summary>
     <div class="panel-body" style="font-size:12.5px;color:var(--text-dim);">
       <strong style="color:var(--text-primary);">On "active":</strong> a session is only shown as active when a start record exists with no matching stop record yet observed in the current log — a genuine, data-backed observation, not an assumption. <strong style="color:var(--text-primary);">On correlation:</strong> tac_plus-ng has a real, protocol-level session identifier (task_id), but it turned out not to be usable in a custom accounting format string — a real deployment caught that with a fatal config error, and it was removed. Sessions here are correlated by (device, port) instead: a heuristic that assumes at most one open session per device+port at a time, true for the large majority of real deployments but not a protocol-level guarantee the way task_id would have been.
     </div>
-  </div>
+  </details>
 
   <div class="panel panel-wide" style="margin-bottom:20px;">
     <div class="panel-body">
@@ -42,16 +42,16 @@
 
   <div class="status-card-grid" id="sessions-kpis" style="margin-bottom:16px;"></div>
 
-  <div id="sessions-table-wrap">
+  <div id="sessions-table-wrap" data-aaa-table>
     <div class="empty-state">Loading sessions…</div>
   </div>
 </main>
 
-<div class="modal-backdrop" id="session-modal-backdrop" hidden>
+<div class="modal-backdrop aaa-drawer-backdrop" id="session-modal-backdrop" hidden>
   <div class="modal modal-md" style="max-width: 600px">
     <button type="button" class="modal-close-btn" id="session-detail-close-x-btn" aria-label="Close">{{ icons.icon('x', 18) }}</button>
     <h2>Session detail</h2>
-    <div id="session-detail-body" class="mono"></div>
+    <div id="session-detail-body"></div>
     <div class="modal-actions">
       <button type="button" class="btn-ghost" id="session-detail-close-btn">Close</button>
     </div>
@@ -131,7 +131,7 @@
 
     const rows = sessions.map((s, i) => `
       <tr>
-        <td>${s.is_active ? '<span class="badge badge-on">Active</span>' : '<span class="badge">Closed</span>'}</td>
+        <td>${s.is_active ? '<span class="badge badge-on">Active · observed</span>' : s.stop_at ? '<span class="badge">Closed · stop seen</span>' : '<span class="badge badge-warning">Incomplete evidence</span>'}</td>
         <td>${escapeHtml(s.user)}</td>
         <td>${escapeHtml(s.device)}</td>
         <td class="cell-mono">${escapeHtml(s.source_ip)}</td>
@@ -173,7 +173,9 @@
       <div class="readout"><span class="readout-k">port</span><span class="readout-v">${escapeHtml(session.port)}</span></div>
       <div class="readout"><span class="readout-k">source</span><span class="readout-v">${escapeHtml(session.source_ip)}</span></div>
       <div class="readout"><span class="readout-k">duration</span><span class="readout-v">${formatDuration(session.start_at, session.stop_at)}</span></div>
-      <div style="margin-top:16px;" class="diff-view">${timeline.map(escapeHtml).join('\n')}</div>
+      <h3 class="aaa-editor-heading">Evidence timeline</h3>
+      <ol class="aaa-timeline">${timeline.map(line=>'<li><code>'+escapeHtml(line)+'</code></li>').join('')}</ol>
+      <p class="aaa-notice">Commands are accounting evidence, not confirmed authorization decisions or execution outcomes. Per-command timestamps are not supplied by this session response. Correlation uses device and port, not a protocol session identifier.</p>
     `;
     document.getElementById('session-modal-backdrop').hidden = false;
   }
@@ -199,7 +201,9 @@
     if (device) params.set('device', device);
     if (document.getElementById('filter-active-only').checked) params.set('active_only', 'true');
 
-    const res = await AAAPlatform.authedFetch('/api/tacacs-accounting/sessions' + (params.toString() ? '?' + params.toString() : ''));
+    let res;
+    try { res = await AAAPlatform.authedFetch('/api/tacacs-accounting/sessions' + (params.toString() ? '?' + params.toString() : '')); }
+    catch (_) { wrap.innerHTML='<div class="empty-state" role="alert">Could not load sessions. Check connectivity and Apply to retry.</div>'; return; }
     if (res.status === 401) { window.location.href = '/login'; return; }
     if (!res.ok) {
       wrap.innerHTML = '<div class="empty-state">Could not load sessions.</div>';

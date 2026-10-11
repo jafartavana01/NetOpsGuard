@@ -42,6 +42,7 @@ docs/gui01/regression/
 docs/gui01/*results.json
 docs/gui02/screenshots/
 docs/gui02/*results.json
+docs/gui03/evidence/
 tests/f03/results.json
 tests/f03/phase*-results/
 # Local delivery and editor files

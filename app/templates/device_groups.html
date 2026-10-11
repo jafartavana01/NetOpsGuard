@@ -4,7 +4,7 @@
 {% block breadcrumb %}TACACS+ / Device Groups{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content aaa-workspace">
       <div class="content-head">
         <h1>Device Groups</h1>
         <p class="content-sub">Assign devices to a group on the Devices page. Deleting a group ungroups its members — it doesn't delete them.</p>
@@ -15,7 +15,7 @@
         <button class="btn-primary btn-small" id="add-device-group-btn" style="width:auto;">+ Add group</button>
       </div>
 
-      <div id="device-groups-table-wrap">
+      <div id="device-groups-table-wrap" data-aaa-table>
         <div class="empty-state">Loading groups…</div>
       </div>
 </main>
@@ -50,7 +50,7 @@
   </div>
 </div>
 
-<div class="modal-backdrop" id="device-members-modal-backdrop" hidden>
+<div class="modal-backdrop aaa-drawer-backdrop" id="device-members-modal-backdrop" hidden>
   <div class="modal modal-md" style="max-width: 560px">
     <button type="button" class="modal-close-btn" id="device-members-modal-close-btn" aria-label="Close">{{ icons.icon('x', 18) }}</button>
     <h2 id="device-members-modal-title">Members</h2>
@@ -65,6 +65,7 @@
     </div>
     <div id="device-members-add-note" class="content-sub" style="margin:-10px 0 14px 0;" hidden></div>
 
+    <label class="field"><span class="field-label">Filter loaded members</span><input type="search" id="device-members-search" placeholder="Name or IP address"></label>
     <div id="device-members-list"></div>
 
     <div class="modal-actions">
@@ -236,6 +237,7 @@
 
     const members = membersRes.ok ? await membersRes.json() : [];
     allDevicesForMembers = devicesRes.ok ? await devicesRes.json() : [];
+    document.getElementById('device-members-search').value='';
 
     if (members.length === 0) {
       listEl.innerHTML = '<div class="empty-state">No members yet.</div>';
@@ -258,6 +260,11 @@
       ? candidates.map(d => `<option value="${d.id}">${escapeHtml(d.name)}${d.device_group_name ? ' (currently: ' + escapeHtml(d.device_group_name) + ')' : ''}</option>`).join('')
       : '<option value="">— No other devices —</option>';
   }
+
+  document.getElementById('device-members-search').addEventListener('input',e=>{
+    const q=e.target.value.trim().toLowerCase();
+    document.querySelectorAll('#device-members-list .version-row').forEach(row=>{row.hidden=!row.textContent.toLowerCase().includes(q);});
+  });
 
   async function addDeviceMember() {
     const select = document.getElementById('device-members-add-select');
