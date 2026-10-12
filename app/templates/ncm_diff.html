@@ -1,10 +1,11 @@
 {% extends "app_shell.html" %}
 {% import "partials/icons.html" as icons %}
 {% block title %}Configuration Diff — NetOpsGuard{% endblock %}
-{% block breadcrumb %}NCM / Configuration Compare{% endblock %}
+{% block breadcrumb %}NCM / Configuration Diff{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content ops-workspace">
+  {% include "partials/operations_workspace.html" %}
   <div class="dash-hero">
     <div class="dash-hero-title">
       <span class="dash-hero-icon">{{ icons.icon('database', 26) }}</span>
@@ -23,6 +24,7 @@
         <select id="diff-device"><option value="">Select a device…</option></select>
       </div>
     </label>
+    <label class="field"><span class="field-label">Configuration type</span><select id="diff-type"><option value="running">Running</option><option value="startup">Startup</option></select></label>
     <label class="field">
       <span class="field-label">From version</span>
       <div class="field-icon-wrap">
@@ -63,7 +65,18 @@
       </div>
     </div>
 
+    <div class="ops-diff-tools">
+      <input id="diff-line-search" type="search" aria-label="Search diff lines" placeholder="Search all diff lines…">
+      <button id="diff-search-next" class="btn-secondary btn-small">Next match</button>
+      <button id="diff-change-prev" class="btn-secondary btn-small">Previous change</button>
+      <button id="diff-change-next" class="btn-secondary btn-small">Next change</button>
+      <button id="diff-copy" class="btn-secondary btn-small">Copy full unified diff</button>
+      <button id="diff-page-prev" class="btn-ghost btn-small">Previous lines</button>
+      <button id="diff-page-next" class="btn-ghost btn-small">Next lines</button>
+      <span id="diff-page-status" class="ops-note" aria-live="polite"></span>
+    </div>
     <div class="cdiff-panes" id="diff-panes"></div>
+    <p class="ops-note">Line changes describe archived text. Modified lines are paired by the existing comparison engine; they do not prove operational impact.</p>
 
     <div style="margin-top:20px;">
       <div class="cdiff-tabs" role="tablist">
@@ -123,6 +136,7 @@
 {% endblock %}
 
 {% block view_scripts %}
+<script>OpsUI.mount();</script>
 <script>
 (() => {
   const esc = AAAPlatform.escapeHtml;
@@ -133,11 +147,15 @@
   let current = null;
   let onlyChanges = false;
   let changesPage = 0;
+  let linePage = 0, cursor = -1, currentPair = null, diffRequest = 0, historyRequest = 0;
+  let activeView = true;
+  AAAPlatform.onViewLeave(() => {activeView=false;diffRequest++;historyRequest++;});
+  const LINE_PAGE_SIZE = 250;
 
   const TYPE_MARK = { added: '+', removed: '\u2212', modified: '~' };
 
   function versionsFor(deviceId) {
-    return allConfigs.filter((c) => c.device_id === deviceId)
+    return allConfigs.filter((c) => c.device_id === deviceId && c.configuration_type === document.getElementById('diff-type').value)
       .sort((a, b) => b.version_number - a.version_number);
   }
 
@@ -163,6 +181,8 @@
   }
 
   async function runDiff(fromId, toId) {
+    const seq=++diffRequest;
+    current=null;currentPair=null;
     if (!fromId || !toId) {
       showPlaceholder('<div class="empty-state"><div class="empty-state-title">Select two versions</div>' +
         '<p class="empty-state-desc">Choose a "from" and a "to" snapshot to compare.</p></div>');
@@ -183,6 +203,7 @@
       });
     } catch (e) { res = null; }
 
+    if(seq!==diffRequest || !document.getElementById('diff-results'))return;
     if (!res || !res.ok) {
       const body = res ? await res.json().catch(() => ({})) : {};
       // Never surfaces a raw exception: the API's own detail string, or
@@ -200,7 +221,11 @@
       return;
     }
 
-    current = await res.json();
+    const result = await res.json();
+    if(!activeView || seq!==diffRequest)return;
+    current = result;
+    currentPair={from_configuration_id:fromId,to_configuration_id:toId};
+    linePage=0;cursor=-1;
     changesPage = 0;
     document.getElementById('filter-category').innerHTML = '<option value="">All categories</option>';
     render();
@@ -264,12 +289,20 @@
     panes.classList.toggle('is-unified', unified);
 
     if (current.identical) {
+      document.getElementById('diff-page-status').textContent='No differences';
+      document.getElementById('diff-page-prev').disabled=true;
+      document.getElementById('diff-page-next').disabled=true;
       panes.innerHTML = '<div class="empty-state"><div class="empty-state-title">No differences found</div>' +
         '<p class="empty-state-desc">These two snapshots are byte-identical.</p></div>';
       return;
     }
 
-    const rows = visibleRows();
+    const allRows=visibleRows();
+    linePage=Math.min(linePage,Math.max(0,Math.ceil(allRows.length/LINE_PAGE_SIZE)-1));
+    const rows=allRows.slice(linePage*LINE_PAGE_SIZE,(linePage+1)*LINE_PAGE_SIZE);
+    document.getElementById('diff-page-status').textContent=`Rows ${allRows.length?linePage*LINE_PAGE_SIZE+1:0}–${Math.min((linePage+1)*LINE_PAGE_SIZE,allRows.length)} of ${allRows.length}`;
+    document.getElementById('diff-page-prev').disabled=linePage===0;
+    document.getElementById('diff-page-next').disabled=(linePage+1)*LINE_PAGE_SIZE>=allRows.length;
     if (!rows.length) {
       panes.innerHTML = '<div class="empty-state">No lines to display for this view.</div>';
       return;
@@ -300,23 +333,23 @@
     const leftBody = rows.map((r) => {
       if (r.kind === 'equal') return lineHtml(r.left_no, ' ', r.left, '');
       if (r.kind === 'remove') return lineHtml(r.left_no, '\u2212', r.left, 'is-remove');
-      if (r.kind === 'modify') return lineHtml(r.left_no, '~', r.left, 'is-modify');
+      if (r.kind === 'modify') return lineHtml(r.left_no, '\u2212', r.left, 'is-remove');
       return lineHtml(null, ' ', '', 'is-void');
     }).join('');
 
     const rightBody = rows.map((r) => {
       if (r.kind === 'equal') return lineHtml(r.right_no, ' ', r.right, '');
       if (r.kind === 'add') return lineHtml(r.right_no, '+', r.right, 'is-add');
-      if (r.kind === 'modify') return lineHtml(r.right_no, '~', r.right, 'is-modify');
+      if (r.kind === 'modify') return lineHtml(r.right_no, '+', r.right, 'is-add');
       return lineHtml(null, ' ', '', 'is-void');
     }).join('');
 
     panes.innerHTML =
       '<div class="cdiff-pane">' +
-      head('Previous version (#' + current.from_version + ')', new Date(current.from_created_at).toLocaleString()) +
+      head('From version (#' + current.from_version + ')', new Date(current.from_created_at).toLocaleString()) +
       '<div class="cdiff-pane-body" id="pane-left">' + leftBody + '</div></div>' +
       '<div class="cdiff-pane">' +
-      head('Current version (#' + current.to_version + ')', new Date(current.to_created_at).toLocaleString()) +
+      head('To version (#' + current.to_version + ')', new Date(current.to_created_at).toLocaleString()) +
       '<div class="cdiff-pane-body" id="pane-right">' + rightBody + '</div></div>';
 
     // Synchronised scrolling. The guard flag stops the two panes from
@@ -448,7 +481,17 @@
     URL.revokeObjectURL(a.href);
   });
 
-  document.getElementById('diff-device').addEventListener('change', fillVersions);
+  async function loadVersions() {
+    const seq=++historyRequest;
+    diffRequest++;current=null;currentPair=null;
+    showPlaceholder('<div class="empty-state">Select two versions and choose Compare.</div>');
+    allConfigs=[];fillVersions();
+    const id=document.getElementById('diff-device').value;if(!id)return;
+    try{const list=await OpsUI.request('/api/ncm/devices/'+encodeURIComponent(id)+'/history');if(seq!==historyRequest||!document.getElementById('diff-device'))return;allConfigs=list;fillVersions();}
+    catch(e){if(seq===historyRequest)showPlaceholder('<div class="empty-state">'+esc(e.message)+'</div>');}
+  }
+  document.getElementById('diff-device').addEventListener('change',loadVersions);
+  document.getElementById('diff-type').addEventListener('change',()=>{diffRequest++;current=null;currentPair=null;fillVersions();showPlaceholder('<div class="empty-state">Select versions of this configuration type, then Compare.</div>');});
   document.getElementById('run-diff-btn').addEventListener('click', () =>
     runDiff(document.getElementById('diff-from').value, document.getElementById('diff-to').value));
 
@@ -465,6 +508,7 @@
   });
 
   document.getElementById('reset-btn').addEventListener('click', () => {
+    diffRequest++;currentPair=null;
     current = null;
     onlyChanges = false;
     const btn = document.getElementById('only-changes-btn');
@@ -479,7 +523,7 @@
 
   document.getElementById('view-mode').addEventListener('change', () => { if (current) renderPanes(); });
   document.getElementById('only-changes-btn').addEventListener('click', (e) => {
-    onlyChanges = !onlyChanges;
+    onlyChanges = !onlyChanges;linePage=0;cursor=-1;
     e.currentTarget.setAttribute('aria-pressed', String(onlyChanges));
     e.currentTarget.classList.toggle('is-active', onlyChanges);
     if (current) renderPanes();
@@ -503,34 +547,44 @@
   document.getElementById('tab-changes').addEventListener('click', () => selectTab('changes'));
   document.getElementById('tab-summary').addEventListener('click', () => selectTab('summary'));
 
+  function jump(kind, direction=1) {
+    if(!current)return;
+    const q=document.getElementById('diff-line-search').value.toLowerCase();
+    const rows=visibleRows();const candidates=rows.map((r,i)=>({r,i})).filter(({r})=>kind==='change'?r.kind!=='equal':q&&(String(r.left||'')+' '+String(r.right||'')).toLowerCase().includes(q));
+    if(!candidates.length){document.getElementById('diff-page-status').textContent='No '+(kind==='change'?'changes':'matches')+' in this view.';return;}
+    const match=direction>0?(candidates.find(c=>c.i>cursor)||candidates[0]):([...candidates].reverse().find(c=>c.i<cursor)||candidates.at(-1));cursor=match.i;linePage=Math.floor(cursor/LINE_PAGE_SIZE);renderPanes();
+    const offset=cursor%LINE_PAGE_SIZE;
+    let pane=document.getElementById('pane-left');
+    // Unified modified rows occupy two display lines. Count from engine rows.
+    const unified=document.getElementById('view-mode').value==='unified';
+    if(!unified&&kind==='search'&&!String(match.r.left||'').toLowerCase().includes(q))pane=document.getElementById('pane-right');
+    let displayOffset=unified?rows.slice(linePage*LINE_PAGE_SIZE,cursor).reduce((n,r)=>n+(r.kind==='modify'?2:1),0):offset;
+    if(unified&&kind==='search'&&match.r.kind==='modify'&&!String(match.r.left||'').toLowerCase().includes(q))displayOffset++;
+    const el=pane?.children[displayOffset];if(el){el.classList.add('ops-hit');el.scrollIntoView({block:'nearest'});}
+  }
+  document.getElementById('diff-search-next').onclick=()=>jump('search');
+  document.getElementById('diff-line-search').oninput=()=>{cursor=-1;jump('search');};
+  document.getElementById('diff-change-next').onclick=()=>jump('change');
+  document.getElementById('diff-change-prev').onclick=()=>jump('change',-1);
+  document.getElementById('diff-page-prev').onclick=()=>{linePage--;renderPanes();};
+  document.getElementById('diff-page-next').onclick=()=>{linePage++;renderPanes();};
+  document.getElementById('diff-copy').onclick=async()=>{
+    if(!currentPair)return;
+    try{const d=await OpsUI.request('/api/ncm/diff',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(currentPair)});await OpsUI.copy(d.lines.map(l=>(l.type==='add'?'+':l.type==='remove'?'-':' ')+l.text).join('\n'));}
+    catch(e){AAAPlatform.toast(e.message,'error');}
+  };
   async function load() {
-    let res;
-    try { res = await AAAPlatform.authedFetch('/api/ncm/configurations?limit=1000'); } catch (e) { res = null; }
-    if (!res || !res.ok) {
-      showPlaceholder('<div class="empty-state">' + (res && res.status === 403
-        ? "Your role doesn't have permission to view Configuration Management."
-        : 'Could not load configurations.') + '</div>');
-      return;
-    }
-    allConfigs = await res.json();
-    if (!allConfigs.length) {
-      showPlaceholder('<div class="empty-state"><div class="empty-state-title">No configuration snapshots available</div>' +
-        '<p class="empty-state-desc">Back up a device from NCM Overview to archive its first configuration.</p></div>');
-      return;
-    }
-
-    const devices = [...new Map(allConfigs.map((c) => [c.device_id, c.device_name])).entries()]
-      .sort((a, b) => a[1].localeCompare(b[1]));
-    document.getElementById('diff-device').innerHTML =
-      '<option value="">Select a device\u2026</option>' +
-      devices.map(([id, name]) => '<option value="' + id + '">' + esc(name) + '</option>').join('');
-
-    const params = new URLSearchParams(window.location.search);
-    const preset = params.get('device_id');
-    if (preset && devices.some(([id]) => id === preset)) {
-      document.getElementById('diff-device').value = preset;
-      fillVersions();
-    }
+    try {
+      const devices=await OpsUI.request('/api/ncm/devices');
+      if(!activeView)return;
+      document.getElementById('diff-device').innerHTML='<option value="">Select a device…</option>'+devices.map(d=>'<option value="'+esc(d.device_id)+'" '+(!d.total_versions?'disabled':'')+'>'+esc(d.device_name)+(!d.total_versions?' — No retained backup':'')+'</option>').join('');
+      const params=new URLSearchParams(location.search),preset=params.get('device_id');
+      if(preset&&devices.some(d=>d.device_id===preset)){
+        document.getElementById('diff-device').value=preset;await loadVersions();
+        const from=params.get('from'),to=params.get('to');
+        if(from||to){const a=allConfigs.find(c=>c.id===from),b=allConfigs.find(c=>c.id===to);if(!a||!b||a.configuration_type!==b.configuration_type){showPlaceholder('<div class="empty-state">The requested comparison pair is unavailable or has different configuration types. No substitute versions were compared.</div>');return;}document.getElementById('diff-type').value=a.configuration_type;fillVersions();document.getElementById('diff-from').value=from;document.getElementById('diff-to').value=to;if(OpsUI.can('ncm:diff'))await runDiff(from,to);}
+      }
+    }catch(e){if(activeView)showPlaceholder('<div class="empty-state">'+esc(e.message)+'</div>');}
   }
 
   load();

@@ -4,11 +4,12 @@
 {% block breadcrumb %}NCM / Backup Schedules{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content ops-workspace">
+  {% include "partials/operations_workspace.html" %}
   <div class="content-head" style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
     <div>
       <h1>Backup Schedules</h1>
-      <p class="content-sub">Recurring configuration backups. Schedules are stored on the server and run without the browser open.</p>
+      <p class="content-sub">Daily configuration backups run on the server. Times below use the server’s local clock, not your browser time zone. Next-run estimates and last-result summaries are not available.</p>
     </div>
     <button type="button" class="btn-primary btn-with-icon" id="add-schedule-btn" style="width:auto;">{{ icons.icon('plus', 16) }}New Schedule</button>
   </div>
@@ -96,12 +97,14 @@
 {% endblock %}
 
 {% block view_scripts %}
+<script>OpsUI.mount();</script>
 <script>
 (() => {
   const esc = AAAPlatform.escapeHtml;
   let schedules = [];
   let devices = [];
   let groups = [];
+  let targetsReady=false,dirty=false,saving=false;
 
   function renderList() {
     const wrap = document.getElementById('schedules-wrap');
@@ -111,7 +114,7 @@
       return;
     }
     wrap.innerHTML =
-      '<table class="data-table"><thead><tr><th>Name</th><th>Status</th><th>Run time</th><th>Types</th>' +
+      '<table class="data-table"><thead><tr><th>Name</th><th>Status</th><th>Daily · server local</th><th>Types</th>' +
       '<th>Targets</th><th>Retention</th><th>Last run</th><th></th></tr></thead><tbody>' +
       schedules.map((s) =>
         '<tr><td>' + esc(s.name) + (s.description ? '<div class="content-sub">' + esc(s.description) + '</div>' : '') + '</td>' +
@@ -119,7 +122,7 @@
         (s.enabled ? 'Enabled' : 'Disabled') + '</span></td>' +
         '<td class="cell-mono">' + esc(s.daily_run_time) + '</td>' +
         '<td class="content-sub">' + esc(s.configuration_types.join(', ')) + '</td>' +
-        '<td class="content-sub">' + s.device_ids.length + ' devices · ' + s.device_group_ids.length + ' groups</td>' +
+        '<td class="content-sub">' + s.device_ids.map(id=>esc(devices.find(d=>d.device_id===id)?.device_name||'Unavailable device '+id)).join(', ') + '<div>' + s.device_group_ids.map(id=>esc(groups.find(g=>g.id===id)?.name||'Unavailable group '+id)).join(', ') + '</div></td>' +
         '<td class="cell-mono">' + s.retention_days + 'd</td>' +
         '<td class="content-sub">' + (s.last_run_at ? new Date(s.last_run_at).toLocaleString() : 'never') + '</td>' +
         '<td class="cell-actions">' +
@@ -137,6 +140,8 @@
           '<span class="sec-picker-name">' + esc(g.name) + '</span></label>').join('')
       : '<div class="empty-state">No device groups defined.</div>';
 
+    const missingGroups=selectedGroups.filter(id=>!groups.some(g=>g.id===id));
+    document.getElementById('schedule-groups').insertAdjacentHTML('beforeend',missingGroups.map(id=>'<label class="sec-picker-row"><input class="group-check" type="checkbox" checked value="'+esc(id)+'">Unavailable group '+esc(id)+' — remove explicitly or restore inventory</label>').join(''));
     document.getElementById('schedule-devices').innerHTML = devices.length
       ? devices.map((d) =>
           '<label class="sec-picker-row">' +
@@ -146,9 +151,13 @@
           '<span class="sec-picker-ip cell-mono">' + esc(d.ip_address) + '</span>' +
           '<span class="content-sub">' + esc(d.device_group_name || '—') + '</span></label>').join('')
       : '<div class="empty-state">No devices available.</div>';
+    const missingDevices=selectedDevices.filter(id=>!devices.some(d=>d.device_id===id));
+    document.getElementById('schedule-devices').insertAdjacentHTML('beforeend',missingDevices.map(id=>'<label class="sec-picker-row"><input class="device-check" type="checkbox" checked value="'+esc(id)+'">Unavailable device '+esc(id)+' — remove explicitly or restore inventory</label>').join(''));
+    document.querySelectorAll('.ops-picker-search').forEach(el=>el.value='');
   }
 
   function openModal(schedule) {
+    dirty=false;
     document.getElementById('schedule-error').hidden = true;
     document.getElementById('schedule-modal-title').textContent = schedule ? 'Edit Schedule' : 'New Schedule';
     document.getElementById('schedule-id').value = schedule ? schedule.id : '';
@@ -160,8 +169,12 @@
     document.getElementById('schedule-enabled').checked = schedule ? schedule.enabled : true;
     renderPickers(schedule ? schedule.device_ids : [], schedule ? schedule.device_group_ids : []);
     document.getElementById('schedule-modal-backdrop').hidden = false;
+    if(!targetsReady){document.getElementById('schedule-error').textContent='Target inventory could not be loaded. Reopen this page after restoring access; saving is blocked to preserve existing targets.';document.getElementById('schedule-error').hidden=false;}
+    document.querySelector('#schedule-form button[type=submit]').disabled=!targetsReady || !OpsUI.can('ncm:schedule');
   }
-  const closeModal = () => { document.getElementById('schedule-modal-backdrop').hidden = true; };
+  const closeModal = (force=false) => { if(saving)return;if(force!==true&&dirty&&!window.confirm('Discard unsaved schedule changes?'))return;dirty=false;document.getElementById('schedule-modal-backdrop').hidden = true; };
+  document.getElementById('schedule-form').addEventListener('input',e=>{if(e.target.type!=='search')dirty=true;});
+  document.getElementById('schedule-form').addEventListener('change',()=>{dirty=true;});
 
   document.getElementById('add-schedule-btn').addEventListener('click', () => openModal(null));
   document.getElementById('schedule-cancel-btn').addEventListener('click', closeModal);
@@ -181,7 +194,7 @@
     if (del) {
       const s = schedules.find((x) => x.id === del.dataset.delete);
       if (!s || !window.confirm('Delete the schedule "' + s.name + '"? Archived configurations are not affected.')) return;
-      const res = await AAAPlatform.authedFetch('/api/ncm/schedules/' + del.dataset.delete, { method: 'DELETE' });
+      let res;try { res = await AAAPlatform.authedFetch('/api/ncm/schedules/' + del.dataset.delete, { method: 'DELETE' }); }catch{AAAPlatform.toast('Could not delete the schedule. Check connectivity and retry.','error');return;}
       if (!res.ok) { AAAPlatform.toast('Could not delete that schedule.', 'error'); return; }
       AAAPlatform.toast('Schedule deleted.');
       load();
@@ -192,6 +205,7 @@
     e.preventDefault();
     const errorBox = document.getElementById('schedule-error');
     errorBox.hidden = true;
+    if(saving||!targetsReady)return;
 
     const deviceIds = [...document.querySelectorAll('.device-check:checked')].map((c) => c.value);
     const groupIds = [...document.querySelectorAll('.group-check:checked')].map((c) => c.value);
@@ -213,9 +227,11 @@
       retention_days: Number(document.getElementById('schedule-retention').value) || 90,
     };
 
-    const res = await AAAPlatform.authedFetch(
+    const submit=document.querySelector('#schedule-form button[type=submit]');saving=true;submit.disabled=true;
+    let res;try {res = await AAAPlatform.authedFetch(
       id ? '/api/ncm/schedules/' + id : '/api/ncm/schedules',
       { method: id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    }catch{errorBox.textContent='Could not save the schedule. Check connectivity and retry.';errorBox.hidden=false;return;}finally{saving=false;submit.disabled=false;}
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -223,7 +239,7 @@
       errorBox.hidden = false;
       return;
     }
-    closeModal();
+    closeModal(true);
     AAAPlatform.toast('Schedule saved.');
     load();
   });
@@ -242,12 +258,16 @@
         : 'Could not load schedules.') + '</div>';
       return;
     }
+    targetsReady=!!(devRes?.ok&&grpRes?.ok);
     schedules = await res.json();
     devices = devRes && devRes.ok ? await devRes.json() : [];
     groups = grpRes && grpRes.ok ? await grpRes.json() : [];
     renderList();
   }
 
+  OpsUI.table('schedules-wrap');
+  OpsUI.pickerFilter('schedule-devices','Search devices by name, IP or group…');
+  OpsUI.pickerFilter('schedule-groups','Search device groups…');
   load();
 })();
 </script>

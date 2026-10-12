@@ -4,10 +4,11 @@
 {% block breadcrumb %}NCM / Backup Jobs{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content ops-workspace">
+  {% include "partials/operations_workspace.html" %}
   <div class="content-head">
     <h1>Backup Jobs</h1>
-    <p class="content-sub">Every backup execution, manual or scheduled, with its per-device result.</p>
+    <p class="content-sub">Latest 200 backup jobs, manual or scheduled. Running jobs refresh every five seconds; counts describe this loaded window.</p>
   </div>
 
   <div class="status-card-grid" id="jobs-kpis" style="margin-bottom:16px;"></div>
@@ -25,6 +26,7 @@
 {% endblock %}
 
 {% block view_scripts %}
+<script>OpsUI.mount();</script>
 <script>
 (() => {
   const ICON_LIST = '{{ icons.icon("clipboard-list", 16) }}';
@@ -34,6 +36,7 @@
   const esc = AAAPlatform.escapeHtml;
 
   let jobs = [];
+  let activeJob=null, loading=false, alive=true, detailRequest=0;
 
   function statusState(s) {
     if (s === 'completed') return 'is-signal';
@@ -48,7 +51,7 @@
   function renderKpis() {
     const count = (s) => jobs.filter((j) => j.status === s).length;
     document.getElementById('jobs-kpis').innerHTML = [
-      AAAPlatform.kpiCard({ icon: ICON_LIST, label: 'Total Jobs', value: jobs.length }),
+      AAAPlatform.kpiCard({ icon: ICON_LIST, label: 'Loaded jobs', value: jobs.length }),
       AAAPlatform.kpiCard({ icon: ICON_CHECK, label: 'Completed', value: count('completed'), state: 'is-signal' }),
       AAAPlatform.kpiCard({ icon: ICON_ALERT, label: 'Partial', value: count('partial_success'),
                             state: count('partial_success') ? 'is-amber' : '' }),
@@ -67,7 +70,7 @@
     }
     wrap.innerHTML =
       '<table class="data-table"><thead><tr><th>Job</th><th>Source</th><th>Schedule</th><th>Status</th>' +
-      '<th>Devices</th><th>Changed</th><th>Started By</th><th>Started</th><th></th></tr></thead><tbody>' +
+      '<th>Devices succeeded / total</th><th>New versions</th><th>Started By</th><th>Started</th><th>Completed</th><th></th></tr></thead><tbody>' +
       jobs.map((j) =>
         '<tr><td class="cell-mono">#' + j.display_number + '</td>' +
         '<td class="content-sub">' + esc(j.source) + '</td>' +
@@ -77,20 +80,23 @@
         '<td class="cell-mono">' + j.changed + '</td>' +
         '<td class="content-sub">' + esc(j.started_by || '—') + '</td>' +
         '<td class="content-sub">' + new Date(j.started_at).toLocaleString() + '</td>' +
+        '<td class="content-sub">' + (j.completed_at?new Date(j.completed_at).toLocaleString():'—') + '</td>' +
         '<td class="cell-actions"><button type="button" class="btn-secondary btn-small" data-job="' + j.id + '">Details</button></td></tr>'
       ).join('') + '</tbody></table>';
   }
 
-  async function openJob(id) {
+  async function openJob(id, refresh=false) {
+    activeJob=id;const seq=++detailRequest;
     let res;
     try { res = await AAAPlatform.authedFetch('/api/ncm/jobs/' + id); } catch (e) { res = null; }
     if (!res || !res.ok) { AAAPlatform.toast('Could not load that job.', 'error'); return; }
     const j = await res.json();
+    if(!alive || seq!==detailRequest || activeJob!==id)return;
 
     document.getElementById('job-drawer-title').textContent = 'Backup Job #' + j.display_number;
     const duration = j.completed_at
       ? Math.max(0, Math.round((new Date(j.completed_at) - new Date(j.started_at)) / 1000)) + 's'
-      : 'still running';
+      : (j.status==='running'?'still running':'Completion time unavailable');
     document.getElementById('job-drawer-meta').innerHTML =
       '<div class="readout"><span class="readout-k">status</span><span class="readout-v">' + esc(statusLabel(j.status)) + '</span></div>' +
       '<div class="readout"><span class="readout-k">source</span><span class="readout-v">' + esc(j.source) + '</span></div>' +
@@ -98,10 +104,10 @@
       '<div class="readout"><span class="readout-k">started by</span><span class="readout-v">' + esc(j.started_by || '—') + '</span></div>' +
       '<div class="readout"><span class="readout-k">started</span><span class="readout-v">' + new Date(j.started_at).toLocaleString() + '</span></div>' +
       '<div class="readout"><span class="readout-k">duration</span><span class="readout-v">' + duration + '</span></div>' +
-      '<div class="readout"><span class="readout-k">devices</span><span class="readout-v cell-mono">' + j.succeeded + ' ok · ' + j.failed + ' failed · ' + j.changed + ' changed</span></div>';
+      '<div class="readout"><span class="readout-k">devices</span><span class="readout-v cell-mono">' + j.succeeded + ' ok · ' + j.failed + ' failed · ' + j.changed + ' new versions</span></div>';
 
     document.getElementById('job-drawer-targets').innerHTML = j.targets.length
-      ? '<table class="data-table"><thead><tr><th>Device</th><th>Type</th><th>Result</th><th>Changed</th><th>Detail</th></tr></thead><tbody>' +
+      ? '<table class="data-table"><thead><tr><th>Device</th><th>Type</th><th>Result</th><th>New versions</th><th>Detail</th></tr></thead><tbody>' +
         j.targets.map((t) => {
           // Connection and retrieval are reported separately: "could not
           // reach the device" and "connected but no config came back"
@@ -114,14 +120,14 @@
             '<td><span class="badge sec-sev-badge ' + (t.status === 'success' ? 'is-signal' : 'is-red') + '">' +
             esc(t.status) + '</span></td>' +
             '<td class="content-sub">' + (t.configuration_changed ? 'Yes' : 'No') + '</td>' +
-            '<td class="content-sub">' + detail + '</td></tr>';
+            '<td class="content-sub">' + detail + (t.configuration_id ? '<div><a href="/ncm/archive?configuration_id='+encodeURIComponent(t.configuration_id)+'">View retained configuration</a></div>' : '') + '</td></tr>';
         }).join('') + '</tbody></table>'
       : '<div class="empty-state">This job had no device targets.</div>';
 
-    document.getElementById('job-drawer-backdrop').hidden = false;
+    if(!refresh)document.getElementById('job-drawer-backdrop').hidden = false;
   }
 
-  const closeDrawer = () => { document.getElementById('job-drawer-backdrop').hidden = true; };
+  const closeDrawer = () => { activeJob=null;detailRequest++;document.getElementById('job-drawer-backdrop').hidden = true; };
   document.getElementById('job-drawer-close-btn').addEventListener('click', closeDrawer);
   document.getElementById('job-drawer-backdrop').addEventListener('click', (e) => {
     if (e.target.id === 'job-drawer-backdrop') closeDrawer();
@@ -134,9 +140,11 @@
     if (btn) openJob(btn.dataset.job);
   });
 
-  async function load() {
+  async function load(initial=false) {
+    if(loading)return;loading=true;
     let res;
-    try { res = await AAAPlatform.authedFetch('/api/ncm/jobs'); } catch (e) { res = null; }
+    try { res = await AAAPlatform.authedFetch('/api/ncm/jobs?limit=200'); } catch (e) { res = null; }
+    loading=false;if(!alive)return;
     if (!res || !res.ok) {
       document.getElementById('jobs-table-wrap').innerHTML =
         '<div class="empty-state">' + (res && res.status === 403
@@ -151,10 +159,13 @@
 
     const params = new URLSearchParams(window.location.search);
     const preset = params.get('job');
-    if (preset) openJob(preset);
+    if (initial && preset) openJob(preset);
   }
 
-  load();
+  OpsUI.table('jobs-table-wrap');
+  load(true);
+  const poll=setInterval(()=>{if(document.hidden)return;if(jobs.some(j=>j.status==='running')){load();if(activeJob)openJob(activeJob,true);}},5000);
+  AAAPlatform.onViewLeave(()=>{alive=false;clearInterval(poll);});
 })();
 </script>
 {% endblock %}

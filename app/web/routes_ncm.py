@@ -25,6 +25,7 @@ from .. import security
 from ..modules.registry import all_modules
 from ..modules.sidebar import build_sidebar_sections
 from .auth_helpers import current_admin_or_none, redirect_to_login
+from .operations_context import operations_permissions
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -71,6 +72,7 @@ def _render(request: Request, session_token: str | None, template_name: str):
             "dashboard_item": dashboard_item,
             "nav_sections": nav_sections,
             "is_superadmin": admin.is_superadmin,
+            "operations_permissions": operations_permissions(admin),
         },
     )
 

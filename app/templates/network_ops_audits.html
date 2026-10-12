@@ -4,7 +4,8 @@
 {% block breadcrumb %}Network Operations / Audits{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content ops-workspace">
+  {% include "partials/operations_workspace.html" %}
   <div class="content-head">
     <h1>Audits</h1>
     <p class="content-sub">A named, reusable collection of Checks — run one against a Command Job's results from that job's own detail page to get an aggregated, transparent score.</p>
@@ -59,6 +60,7 @@
 {% endblock %}
 
 {% block view_scripts %}
+<script>OpsUI.mount();OpsUI.table('audits-table-wrap');OpsUI.table('audit-runs-table-wrap');</script>
 <script>
   function escapeHtml(s) {
     // Escapes quotes as well as angle brackets, so the result is safe

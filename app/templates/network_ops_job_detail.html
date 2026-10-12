@@ -4,7 +4,8 @@
 {% block breadcrumb %}Network Operations / Command Jobs / Detail{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content ops-workspace">
+  {% include "partials/operations_workspace.html" %}
   <div class="content-head">
     <a href="/network-ops/jobs" class="content-sub">← Back to Command Jobs</a>
     <h1 id="job-title">Loading…</h1>
@@ -57,6 +58,7 @@
 {% endblock %}
 
 {% block view_scripts %}
+<script>OpsUI.mount();OpsUI.table('check-results-wrap');</script>
 <script>
   function escapeHtml(s) {
     // Escapes quotes as well as angle brackets, so the result is safe

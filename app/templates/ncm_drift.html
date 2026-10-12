@@ -4,10 +4,11 @@
 {% block breadcrumb %}NCM / Drift Detection{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content ops-workspace">
+  {% include "partials/operations_workspace.html" %}
   <div class="content-head">
     <h1>Drift Detection</h1>
-    <p class="content-sub">Each device's latest archived configuration compared against the version you designated as its baseline. This reflects what has been backed up — a device that changed but hasn't been backed up since shows as a coverage gap, not as in sync.</p>
+    <p class="content-sub">Compare enabled devices’ latest running snapshots with their designated baselines. Results describe archived configurations, not live device state; changes since the last backup are unknown.</p>
   </div>
 
   <div class="status-card-grid" id="drift-kpis" style="margin-bottom:16px;"></div>
@@ -20,7 +21,7 @@
         <select id="filter-status">
           <option value="">All devices</option>
           <option value="drifted">Drifted</option>
-          <option value="in_sync">In sync</option>
+          <option value="in_sync">No drift detected</option>
           <option value="gaps">Coverage gaps</option>
         </select>
       </div>
@@ -65,6 +66,7 @@
 {% endblock %}
 
 {% block view_scripts %}
+<script>OpsUI.mount();</script>
 <script>
 (() => {
   const ICON_CHECK = '{{ icons.icon("check", 16) }}';
@@ -80,10 +82,10 @@
   // gaps into "drifted" would raise false alarms; collapsing them into
   // "in sync" would hide real blind spots.
   const STATUS = {
-    in_sync:       { label: 'In sync',        cls: 'is-signal' },
-    drifted:       { label: 'Drifted',        cls: 'is-red' },
+    in_sync:       { label: 'No drift detected',        cls: 'is-signal' },
+    drifted:       { label: 'Drift detected',        cls: 'is-red' },
     no_baseline:   { label: 'No baseline',    cls: 'is-amber' },
-    no_snapshot:   { label: 'Never backed up', cls: 'is-amber' },
+    no_snapshot:   { label: 'No usable running backup', cls: 'is-amber' },
     baseline_gone: { label: 'Baseline missing', cls: 'is-amber' },
   };
 
@@ -110,7 +112,7 @@
 
     wrap.innerHTML =
       '<table class="data-table"><thead><tr><th>Device</th><th>Status</th><th>Baseline</th>' +
-      '<th>Current</th><th>Change</th><th>Last Backup</th><th></th></tr></thead><tbody>' +
+      '<th>Compared snapshot</th><th>Line difference</th><th>Snapshot archived</th><th></th></tr></thead><tbody>' +
       rows.map((d) => {
         const s = STATUS[d.status] || { label: d.status, cls: '' };
         const change = d.status === 'drifted'
@@ -119,7 +121,7 @@
           : '<span class="content-sub">\u2014</span>';
         const actions =
           (d.status === 'drifted' && d.baseline_configuration_id && d.latest_configuration_id
-            ? '<a class="btn-secondary btn-small" href="/ncm/diff?device_id=' + d.device_id + '">View Diff</a>'
+            ? '<a class="btn-secondary btn-small" href="/ncm/diff?device_id=' + encodeURIComponent(d.device_id) + '&from=' + encodeURIComponent(d.baseline_configuration_id) + '&to=' + encodeURIComponent(d.latest_configuration_id) + '">Exact baseline diff</a>'
             : '') +
           (d.latest_configuration_id
             ? '<button type="button" class="btn-secondary btn-small" data-set-baseline="' + d.device_id +
@@ -128,7 +130,7 @@
             : '');
         return '<tr><td>' + esc(d.device_name) + '</td>' +
           '<td><span class="badge sec-sev-badge ' + s.cls + '">' + esc(s.label) + '</span></td>' +
-          '<td class="cell-mono">' + (d.baseline_version != null ? '#' + d.baseline_version : '\u2014') + '</td>' +
+          '<td class="cell-mono">' + (d.baseline_version != null ? '#' + d.baseline_version + '<div class="content-sub">Set '+(d.baseline_set_at?new Date(d.baseline_set_at).toLocaleString():'time unavailable')+'</div>' : '\u2014') + '</td>' +
           '<td class="cell-mono">' + (d.latest_version != null ? '#' + d.latest_version : '\u2014') + '</td>' +
           '<td class="cell-mono">' + change + '</td>' +
           '<td class="content-sub">' + (d.last_backup_at ? new Date(d.last_backup_at).toLocaleString() : 'never') + '</td>' +
@@ -138,9 +140,9 @@
 
   function renderKpis(d) {
     document.getElementById('drift-kpis').innerHTML = [
-      AAAPlatform.kpiCard({ icon: ICON_SERVER, label: 'Devices Checked', value: d.total }),
-      AAAPlatform.kpiCard({ icon: ICON_CHECK, label: 'In Sync', value: d.in_sync, state: 'is-signal' }),
-      AAAPlatform.kpiCard({ icon: ICON_ALERT, label: 'Drifted', value: d.drifted,
+      AAAPlatform.kpiCard({ icon: ICON_SERVER, label: 'Enabled devices', value: d.total }),
+      AAAPlatform.kpiCard({ icon: ICON_CHECK, label: 'No archived drift', value: d.in_sync, state: 'is-signal' }),
+      AAAPlatform.kpiCard({ icon: ICON_ALERT, label: 'Drift detected', value: d.drifted,
                             state: d.drifted ? 'is-red' : '' }),
       AAAPlatform.kpiCard({ icon: ICON_HISTORY, label: 'Coverage Gaps', value: d.coverage_gaps,
                             state: d.coverage_gaps ? 'is-amber' : '',
@@ -167,7 +169,7 @@
       document.getElementById('baseline-error').hidden = false;
       return;
     }
-    const history = await res.json();
+    const history = (await res.json()).filter(c=>c.configuration_type==='running');
     if (!history.length) {
       sel.innerHTML = '';
       document.getElementById('baseline-error').textContent =
@@ -196,13 +198,15 @@
       errorBox.hidden = false;
       return;
     }
-    const res = await AAAPlatform.authedFetch('/api/ncm/devices/' + currentDeviceId + '/baseline', {
+    let res;
+    try { res = await AAAPlatform.authedFetch('/api/ncm/devices/' + currentDeviceId + '/baseline', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         configuration_id: configId,
         notes: document.getElementById('baseline-notes').value.trim() || null,
       }),
     });
+    } catch { errorBox.textContent='Could not save the baseline. Check connectivity and retry.';errorBox.hidden=false;return; }
     if (!res.ok) {
       const b = await res.json().catch(() => ({}));
       errorBox.textContent = res.status === 403
@@ -245,6 +249,7 @@
 
   }
 
+  OpsUI.table('drift-table-wrap',{search:false});
   load();
 })();
 </script>

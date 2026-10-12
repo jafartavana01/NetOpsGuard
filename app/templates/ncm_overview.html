@@ -4,7 +4,8 @@
 {% block breadcrumb %}NCM / Overview{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content ops-workspace">
+  {% include "partials/operations_workspace.html" %}
   <div class="content-head" style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
     <div>
       <h1>Configuration Management</h1>
@@ -17,7 +18,7 @@
 
   <section class="sec-grid sec-grid-risk">
     <div class="panel panel-wide">
-      <div class="panel-head"><span class="rail rail-dim"></span>Recent Configuration Changes</div>
+      <div class="panel-head"><span class="rail rail-dim"></span>Latest Archived Versions</div>
       <div class="panel-body" id="recent-changes-body"><div class="empty-state">Loading…</div></div>
     </div>
     <div class="panel panel-wide">
@@ -26,7 +27,8 @@
     </div>
   </section>
 
-  <div class="content-head"><h2>Device Backup Status</h2></div>
+  <section class="ops-grid"><div class="panel"><div class="panel-head">Attention required</div><div id="ncm-attention" class="panel-body" aria-live="polite">Loading…</div></div><div class="panel"><div class="panel-head">Backup coverage</div><div id="ncm-coverage" class="panel-body">Loading…</div></div></section>
+  <div class="content-head"><h2>Device Backup Coverage</h2><p class="ops-note">All inventory devices. Archive time changes only when a new version is stored; unchanged successful backups do not create versions.</p></div>
   <div id="device-status-wrap"><div class="empty-state">Loading…</div></div>
 </main>
 
@@ -81,6 +83,7 @@
 {% endblock %}
 
 {% block view_scripts %}
+<script>OpsUI.mount();</script>
 <script>
 (() => {
   const ICON_SERVER = '{{ icons.icon("server", 16) }}';
@@ -127,12 +130,13 @@
     const d = await res.json();
 
     document.getElementById('ncm-kpis').innerHTML = [
-      AAAPlatform.kpiCard({ icon: ICON_SERVER, label: 'Managed Devices', value: d.total_devices }),
-      AAAPlatform.kpiCard({ icon: ICON_CHECK, label: 'Recent Backup', value: d.devices_with_recent_backup, state: 'is-signal', sub: 'last 48 hours' }),
-      AAAPlatform.kpiCard({ icon: ICON_ALERT, label: 'Failed', value: d.devices_with_failed_backup, state: d.devices_with_failed_backup ? 'is-red' : '' }),
-      AAAPlatform.kpiCard({ icon: ICON_CLOCK, label: 'Never Backed Up', value: d.devices_never_backed_up, state: d.devices_never_backed_up ? 'is-amber' : '' }),
-      AAAPlatform.kpiCard({ icon: ICON_DB, label: 'Stored Versions', value: d.total_configurations, sub: d.configurations_changed_recently + ' new in 48h' }),
-      AAAPlatform.kpiCard({ icon: ICON_CLOCK, label: 'Last Successful Backup', value: timeAgo(d.last_successful_backup_at) }),
+      AAAPlatform.kpiCard({ icon: ICON_SERVER, label: 'Enabled devices', value: d.total_devices }),
+      AAAPlatform.kpiCard({ icon: ICON_CHECK, label: 'Devices backed up successfully', value: d.devices_with_recent_backup, state: 'is-signal', sub: 'last 48 hours' }),
+      AAAPlatform.kpiCard({ icon: ICON_ALERT, label: 'Latest attempt failed', value: d.devices_with_failed_backup, state: d.devices_with_failed_backup ? 'is-red' : '' }),
+      AAAPlatform.kpiCard({ icon: ICON_CLOCK, label: 'No backup attempts', value: d.devices_never_backed_up, state: d.devices_never_backed_up ? 'is-amber' : '' }),
+      AAAPlatform.kpiCard({ icon: ICON_DB, label: 'Stored Versions', value: d.total_configurations, sub: d.configurations_changed_recently + ' versions archived in 48h' }),
+      AAAPlatform.kpiCard({ icon: ICON_CLOCK, label: 'Last success · enabled devices', value: timeAgo(d.last_successful_backup_at) }),
+      AAAPlatform.kpiCard({ icon: ICON_CLOCK, label: 'Running backup jobs', value: d.active_jobs }),
     ].join('');
 
     const changes = document.getElementById('recent-changes-body');
@@ -149,10 +153,10 @@
 
     const jobs = document.getElementById('recent-jobs-body');
     jobs.innerHTML = d.recent_jobs.length
-      ? '<table class="data-table"><thead><tr><th>Job</th><th>Status</th><th>Devices</th><th>Changed</th><th>Started</th></tr></thead><tbody>' +
+      ? '<table class="data-table"><thead><tr><th>Job</th><th>Status</th><th>Devices</th><th>New versions</th><th>Started</th></tr></thead><tbody>' +
         d.recent_jobs.map((j) =>
           '<tr><td class="cell-mono"><a href="/ncm/jobs?job=' + j.id + '">#' + j.display_number + '</a></td>' +
-          '<td><span class="badge sec-sev-badge">' + esc(j.status) + '</span></td>' +
+          '<td><span class="badge sec-sev-badge ' + jobStatusState(j.status) + '">' + esc(j.status.replaceAll('_',' ')) + '</span></td>' +
           '<td class="cell-mono">' + j.succeeded + '/' + j.total_devices + '</td>' +
           '<td class="cell-mono">' + j.changed + '</td>' +
           '<td class="content-sub">' + timeAgo(j.started_at) + '</td></tr>').join('') +
@@ -164,12 +168,13 @@
     const wrap = document.getElementById('device-status-wrap');
     let res;
     try { res = await AAAPlatform.authedFetch('/api/ncm/devices'); } catch (e) { res = null; }
-    if (!res || !res.ok) { wrap.innerHTML = '<div class="empty-state">Could not load device status.</div>'; return; }
+    if (!res || !res.ok) { wrap.innerHTML = '<div class="empty-state">Could not load device status.</div>'; document.getElementById('ncm-coverage').textContent='Coverage unavailable.'; document.getElementById('ncm-attention').textContent='Attention data unavailable.'; return; }
     const devices = await res.json();
+    renderCoverage(devices);
     if (!devices.length) { wrap.innerHTML = '<div class="empty-state">No devices to manage yet.</div>'; return; }
 
     wrap.innerHTML =
-      '<table class="data-table"><thead><tr><th>Device</th><th>IP Address</th><th>Group</th><th>Latest Version</th><th>Versions</th><th>Last Backup</th><th>Status</th><th></th></tr></thead><tbody>' +
+      '<table class="data-table"><thead><tr><th>Device</th><th>IP Address</th><th>Group</th><th>Latest Version</th><th>Versions</th><th>Latest archived version time</th><th>Status</th><th></th></tr></thead><tbody>' +
       devices.map((d) => {
         const state = d.last_backup_status === 'failed' ? 'is-red'
           : (d.last_backup_status === 'success' ? 'is-signal' : '');
@@ -188,7 +193,7 @@
   // ---- Backup modal (device picker) ----
   function pickerVisible() {
     const q = document.getElementById('backup-device-search').value.trim().toLowerCase();
-    return pickerDevices.filter((d) => !q || d.device_name.toLowerCase().includes(q) || d.ip_address.toLowerCase().includes(q));
+    return pickerDevices.filter((d) => !q || d.device_name.toLowerCase().includes(q) || d.ip_address.toLowerCase().includes(q) || (d.device_group_name||'').toLowerCase().includes(q));
   }
   function renderPicker() {
     const list = document.getElementById('backup-device-list');
@@ -278,11 +283,21 @@
     closeModal();
     pickerSelected.clear();
     AAAPlatform.toast('Backup job #' + r.job_display_number + ' finished — ' + r.succeeded + '/' + r.total_devices +
-                      ' devices, ' + r.changed + ' changed.');
+                      ' devices, ' + r.changed + ' new versions.');
     loadOverview();
     loadDeviceStatus();
   });
 
+  async function renderCoverage(devices) {
+    document.getElementById('ncm-coverage').textContent = `${devices.filter(d=>d.total_versions>0).length} of ${devices.length} inventory devices have retained versions. ${devices.filter(d=>!d.total_versions).length} have no retained versions.`;
+    const attention=document.getElementById('ncm-attention');
+    const links=devices.filter(d=>!d.total_versions||d.last_backup_status==='failed').map(d=>'<a href="/ncm/archive?device_id='+encodeURIComponent(d.device_id)+'">'+esc(d.device_name)+' — '+(d.last_backup_status==='failed'?'Latest backup failed':'No retained backup')+'</a>');
+    try {const drift=await OpsUI.request('/api/ncm/drift');for(const d of drift.devices.filter(d=>d.status!=='in_sync'))links.push('<a href="/ncm/drift">'+esc(d.device_name)+' — '+esc(({drifted:'Drift detected',no_baseline:'No baseline',no_snapshot:'No running snapshot',baseline_gone:'Baseline missing'})[d.status]||d.status)+'</a>');}catch{links.push('<p>Drift attention data unavailable.</p>');}
+    try {const deployments=await OpsUI.request('/api/ncm/deployments');for(const d of deployments.filter(d=>d.status==='failed'))links.push('<a href="/ncm/changes">'+esc(d.device_name)+' — Failed deployment #'+esc(d.display_number)+'</a>');}catch{links.push('<p>Change-control attention data unavailable.</p>');}
+    if(attention.isConnected)attention.innerHTML=links.length?links.join(''):'No attention items in the available data.';
+  }
+  OpsUI.table('device-status-wrap');
+  ['recent-changes-body','recent-jobs-body'].forEach(id=>OpsUI.table(id,{search:false}));
   loadOverview();
   loadDeviceStatus();
 })();

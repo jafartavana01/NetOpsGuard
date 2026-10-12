@@ -1,0 +1,78 @@
+/* GUI-04: operations pages only, using GUI-01 tokens. */
+.ops-workspace {max-width:none;min-width:0}
+.ops-workspace h1 {font-size:var(--type-page);letter-spacing:-.025em}
+.ops-workspace .content-sub {line-height:1.5}
+.ops-workspace .content-head,.ops-workspace .dash-hero {margin:18px 0}
+.ops-nav {display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--border-default);padding-bottom:10px}
+.ops-nav a {padding:7px 11px;color:var(--text-secondary);font-size:13px;border-radius:var(--radius-sm)}
+.ops-nav a[aria-current] {color:var(--accent-primary);background:var(--bg-selected)}
+.ops-links {display:flex;gap:16px;flex-wrap:wrap;font-size:12px;padding:12px 0;color:var(--text-muted)}
+.ops-links a {color:var(--info)}
+.ops-workspace .status-card-grid {gap:10px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.ops-workspace #ncm-kpis {grid-template-columns:repeat(4,minmax(0,1fr))}
+.ops-workspace #ncm-kpis .status-card {min-height:106px}
+.ops-workspace #ncm-kpis .status-card-value {font-size:24px}
+.ops-workspace .sec-grid-risk {grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.ops-workspace .data-table th {word-break:normal;white-space:nowrap}
+.ops-workspace .cell-mono {word-break:normal;overflow-wrap:normal}
+#ncm-attention a {display:block;padding:6px 0;color:var(--info)}
+.ops-workspace .sec-sev-badge.is-signal {color:var(--success);background:var(--success-bg)}
+.ops-workspace .sec-sev-badge.is-red {color:var(--danger);background:var(--danger-bg)}
+.ops-workspace .sec-sev-badge.is-amber {color:var(--warning);background:var(--warning-bg)}
+.ops-workspace .status-card {padding:14px}
+.ops-workspace .data-table {font-size:12px;width:100%}
+.ops-workspace .data-table th,.ops-workspace .data-table td {padding:10px 12px;vertical-align:top;overflow-wrap:anywhere}
+.ops-workspace .cell-actions {white-space:normal;min-width:120px}
+.ops-workspace .cell-actions a,.ops-workspace .cell-actions button {margin:2px;width:auto}
+.ops-table {overflow-x:auto;min-width:0;border:1px solid var(--border-subtle);border-radius:var(--radius-md);background:var(--bg-surface)}
+.ops-table-tools {display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px;background:var(--bg-surface-raised);font-size:12px}
+.ops-table-tools input {max-width:280px}
+.ops-table-tools button {width:auto}
+.ops-table-tools span {margin-right:auto;color:var(--text-secondary)}
+.ops-grid {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin:16px 0}
+.ops-attention {padding:12px 16px;border-left:3px solid var(--warning);background:var(--bg-surface)}
+.ops-attention a {display:block;padding:6px 0;color:var(--info)}
+.ops-master-detail {display:grid;grid-template-columns:minmax(230px,280px) minmax(0,1fr);gap:18px}
+.ops-explorer {background:var(--bg-surface);border:1px solid var(--border-subtle);padding:14px;border-radius:var(--radius-md);align-self:start;position:sticky;top:12px}
+.ops-explorer input,.ops-explorer select {width:100%;margin-bottom:10px}
+.ops-explorer-list {max-height:64vh;overflow:auto}
+.ops-device {width:100%;text-align:left;display:block;padding:12px 10px;background:transparent;border:0;border-bottom:1px solid var(--border-subtle);color:var(--text-primary);cursor:pointer}
+.ops-device[aria-pressed=true] {background:var(--bg-selected);box-shadow:inset 3px 0 var(--accent-primary)}
+.ops-device small {display:block;color:var(--text-muted);font-family:var(--font-mono);margin-top:5px}
+.ops-device:disabled {opacity:.6;cursor:not-allowed}
+.ops-detail {min-width:0}
+.ops-note {font-size:12px;color:var(--text-secondary);padding:10px 0;line-height:1.5}
+.ops-workspace .cmp-layout {grid-template-columns:minmax(230px,280px) minmax(0,1fr)}
+.ops-workspace .cmp-workspace,.ops-workspace .panel,.ops-workspace .panel-body {min-width:0}
+.ops-workspace .cmp-device {flex-wrap:wrap}
+.ops-workspace .cmp-device-body {min-width:90px}
+.ops-workspace .cmp-device-snap {white-space:normal;overflow-wrap:anywhere}
+.ops-workspace .cmp-device:has(input:disabled) {opacity:.65;cursor:not-allowed}
+.ops-workspace .cdiff-panes {min-width:0;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.ops-workspace .cdiff-panes.is-unified {grid-template-columns:minmax(0,1fr)}
+.ops-workspace .cdiff-pane {min-width:0}
+.ops-workspace .cdiff-controls {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.ops-workspace .cdiff-controls .field {min-width:0}
+.ops-workspace .cdiff-controls select {min-width:0;width:100%;text-overflow:ellipsis}
+.ops-workspace .cdiff-actions {grid-column:1/-1;justify-content:flex-end;flex-wrap:wrap}
+.ops-workspace #changes-wrap {overflow-x:auto;min-width:0}
+.ops-workspace .cdiff-summary {flex-wrap:wrap}
+.ops-workspace .cdiff-pane-body {max-height:60vh}
+.ops-diff-tools {display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}
+.ops-diff-tools button {width:auto}
+.ops-diff-tools input {max-width:280px}
+.ops-overlay .drawer {width:min(96vw,1300px)!important;max-width:96vw}
+.ops-overlay .drawer.ops-expanded {width:96vw!important}
+.ops-overlay .ncm-config-view {max-height:64vh;overflow:auto}
+.ops-overlay .ncm-config-text {white-space:pre}
+.ops-overlay .ops-wrap .ncm-config-text {white-space:pre-wrap;overflow-wrap:anywhere}
+.ops-overlay .ncm-config-line {min-height:20px}
+.ops-overlay .modal.modal-lg {width:min(94vw,900px);max-width:94vw}
+.ops-overlay .modal {max-height:90vh;overflow:auto}
+.ops-overlay .data-table {font-size:12px}
+.ops-overlay [role=dialog] {outline:none}
+.ops-workspace .ops-hit {outline:2px solid var(--warning);outline-offset:-2px}
+.ops-workspace [data-ops-denied],.ops-overlay [data-ops-denied] {display:none!important}
+@media(min-width:1920px){.ops-master-detail {grid-template-columns:320px minmax(0,1fr)}}
+@media(max-width:1100px){.ops-grid {grid-template-columns:1fr}.ops-master-detail {grid-template-columns:220px minmax(0,1fr)}}
+@media(max-width:760px){.ops-master-detail,.ops-workspace .cmp-layout {grid-template-columns:1fr}.ops-explorer {position:static}.ops-explorer-list {max-height:220px}.ops-workspace .cdiff-panes {grid-template-columns:1fr}}

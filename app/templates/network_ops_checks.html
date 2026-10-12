@@ -3,7 +3,8 @@
 {% block breadcrumb %}Network Operations / Checks{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content ops-workspace">
+  {% include "partials/operations_workspace.html" %}
   <div class="content-head">
     <h1>Checks</h1>
     <p class="content-sub">A registered, code-defined set of evaluators — run them against a completed Command Job's collected output from that job's own detail page.</p>
@@ -16,6 +17,7 @@
 {% endblock %}
 
 {% block view_scripts %}
+<script>OpsUI.mount();OpsUI.table('checks-table-wrap');</script>
 <script>
   function escapeHtml(s) {
     // Escapes quotes as well as angle brackets, so the result is safe

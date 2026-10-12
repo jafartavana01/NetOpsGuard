@@ -1,0 +1,7 @@
+<nav class="ops-nav" aria-label="Configuration management">
+{% for path, label in [('/ncm/overview','Overview'),('/ncm/archive','Archive'),('/ncm/compare','Compare devices'),('/ncm/diff','Version diff'),('/ncm/drift','Baselines & drift'),('/ncm/jobs','Backup jobs'),('/ncm/schedules','Schedules'),('/ncm/changes','Change control')] %}
+<a href="{{ path }}"{% if request.url.path == path %} aria-current="page"{% endif %}>{{ label }}</a>
+{% endfor %}
+</nav>
+<div class="ops-links"><span>Network Operations</span><a href="/tacacs/devices">Device inventory / discovery</a><a href="/tacacs/device-groups">Device groups</a><a href="/network-ops/jobs">SSH command jobs</a><a href="/network-ops/templates">Command templates</a></div>
+<script type="application/json" id="operations-permissions">{{ operations_permissions|default([])|tojson }}</script>
