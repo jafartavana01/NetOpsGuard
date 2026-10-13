@@ -1,114 +1,125 @@
-<img width="1874" height="857" alt="image" src="https://github.com/user-attachments/assets/60af06ac-6017-447e-bd37-69bb27d9c427" />
-
 # NetOpsGuard
 
-NetOpsGuard is a self-hosted network operations and security platform for managing network infrastructure from one web interface.
+**Self-hosted network access control, configuration management, and security operations — in one web interface.**
 
-It combines TACACS+ AAA, device security auditing, configuration management, network command jobs, accounting, sessions, and Active Directory/LDAP integration.
+NetOpsGuard helps network teams control who can access their infrastructure, which commands they can run, and what changes on their devices. It brings **TACACS+ AAA**, **Active Directory/LDAP integration**, **device inventory**, **Security Center**, **network configuration management (NCM)**, and **SSH command operations** into a unified platform.
 
-## Main capabilities
-<img width="1024" height="1536" alt="NetOpsGuard secure network operations hub" src="https://github.com/user-attachments/assets/c1abe186-dd4e-4519-8585-98b2f2eb2e1f" />
+**Free Community edition: up to 5 devices, with the currently available feature set.** Larger device limits are available through signed licences. [See licensing](docs/LICENSING.md).
 
-- TACACS+ authentication, authorization, accounting, and command authorization
-- Local users and Active Directory/LDAP identity integration through MAVIS
-- Scoped policies, command sets, condition trees, and policy simulation
-- Configuration preview, validation, diff, backup, apply, and rollback workflow
-- Device inventory and device groups
-- SSH command jobs and reusable command templates
-- Security Center audits, findings, scoring, and compliance references
-- NCM configuration backups, history, baseline comparison, and diffs
-- Session and permit/deny accounting views
-- RADIUS authentication and accounting where supported by the installed daemon
+![NetOpsGuard web interface](https://github.com/user-attachments/assets/60af06ac-6017-447e-bd37-69bb27d9c427)
 
-RADIUS does not provide TACACS+-style per-command authorization.
+[**Installation**](#quick-start) · [**Features**](#what-you-can-do) · [**First configuration**](#your-first-configuration) · [**Documentation**](#documentation) · [**Security**](SECURITY.md) · [**Issues**](https://github.com/jafartavana01/NetOpsGuard/issues)
 
-## Requirements
+## What you can do
 
-- Ubuntu Server 22.04, 24.04, or 26.04 LTS
-- Root or sudo access
-- Internet access during installation
-- At least 5 GB free disk space recommended
-- At least 1 GB RAM recommended
+| Area | Capabilities |
+| --- | --- |
+| **TACACS+ AAA** | Centralized administrator authentication, device and command authorization, command sets, policy scopes, accounting, sessions, and access events. |
+| **Identity & access** | Local users/groups, Active Directory/LDAP integration, external group bindings, administrator roles, and policy simulation. |
+| **Device inventory** | Manage devices and device groups, discover devices on a network range, and review device-related information. |
+| **Configuration deployment** | Preview and validate an AAA candidate, examine the diff, and apply changes to the AAA service with backup and recovery safeguards. |
+| **RADIUS** | Configure clients, policies, attributes, authentication, and accounting where supported by the installed daemon and NAS. |
+| **Security Center** | Cisco IOS/IOS-XE security audits, findings, scores, compliance-oriented views, reports, and audit scheduling. |
+| **Network Configuration Management** | SSH configuration backup and archive, version history, comparison, baseline/drift views, change control, jobs, and backup schedule management. |
+| **Network Operations** | Run SSH command jobs across devices, reuse command templates, and review execution results. |
+| **Platform administration** | Web dashboard, configurable HTTPS, module management, administrator accounts/roles, licence management, and diagnostics. |
 
-The installer provisions PostgreSQL, installs the Python dependencies, builds tac_plus-ng from the configured source, creates the system services, and asks you to create the first administrator account.
+**Protocol boundary:** RADIUS does not offer TACACS+-style per-command authorization. Available RADIUS and directory behaviors depend on the selected tac_plus-ng build and target network devices.
 
-## Installation
+<details>
+<summary>View the NetOpsGuard capabilities infographic</summary>
 
-Clone or copy the complete repository to the server:
+![NetOpsGuard capabilities overview](https://github.com/user-attachments/assets/c1abe186-dd4e-4519-8585-98b2f2eb2e1f)
+
+</details>
+
+## Quick start
+
+### Requirements
+
+- **OS:** Ubuntu Server 22.04, 24.04, or 26.04 LTS
+- **Access:** A user with sudo privileges
+- **Resources:** At least 1 GB RAM and 5 GB free disk space recommended; allocate more for production workloads, logs, and configuration archives
+- **Network:** Outbound access during initial installation to obtain packages and the AAA daemon source
+- **Python:** Python 3.10+ (the bootstrap can install Python 3 if missing)
+
+Start on a fresh Ubuntu server:
 
 ```bash
+sudo apt update
+sudo apt install -y git
 git clone https://github.com/jafartavana01/NetOpsGuard.git
 cd NetOpsGuard
 sudo bash bootstrap.sh
 ```
 
-You can also run the installer directly:
+The installer provisions the platform, PostgreSQL, the AAA service, and an initial administrator account. It also generates a self-signed HTTPS certificate for initial access.
 
-```bash
-sudo python3 setup.py
-```
-
-After installation, open:
+When installation completes, open:
 
 ```text
-https://<server-address>:8420
+https://<server-ip>:8420
 ```
 
-The installer creates a self-signed certificate. Replace it with a certificate issued by your internal or public CA before production use, and restrict management access to trusted networks.
+Sign in using the administrator credentials created during installation. **Do not expose the management interface directly to the public Internet.** Restrict access to trusted administrator networks and replace the self-signed certificate with one issued by your trusted CA.
 
-## First steps
+For detailed installation, firewall, service, and removal instructions, see the [installation guide](docs/INSTALL.md).
 
-1. Sign in with the administrator account created during installation.
-2. Configure HTTPS and trusted administrator source networks.
-3. Add network devices and device groups.
-4. Configure local users or the AD/LDAP integration.
-5. Create command sets and scoped policies.
-6. Review the generated candidate configuration and diagnostics.
-7. Apply only a valid candidate, then test expected permit and deny results on a lab device.
+### Network connectivity
 
-## Security behavior
+| Connection | Default port | Direction / purpose |
+| --- | --- | --- |
+| Web management | TCP **8420** | Administrator browser → NetOpsGuard |
+| TACACS+ | TCP **49** | Network device → AAA server |
+| RADIUS, when enabled | UDP **1812 / 1813** | Network device → authentication / accounting listener |
+| SSH | TCP **22** | NetOpsGuard → managed devices for supported operations |
+| LDAPS, when configured | TCP **636** | NetOpsGuard → directory server |
 
-NetOpsGuard is designed to fail closed when a restrictive policy scope cannot be resolved.
+The management port and certain service settings are configurable. Open only the ports needed for your deployment; directory and device ports depend on your environment. Database access is intended to remain local or otherwise appropriately restricted.
 
-- Missing or invalid policy references block candidate application.
-- Empty referenced groups are not deployable under the current policy contract.
-- Invalid policies are not silently omitted from a candidate.
-- Explicitly unrestricted policies remain supported.
-- Policy metadata, scope, associations, priority changes, and history are saved through one server-side mutation operation.
-- Restoration rejects snapshots that cannot safely reconstruct their restrictions.
-- State-changing browser requests use CSRF protection.
-- Sensitive device and directory values are encrypted at rest using the installation encryption key.
+## Your first configuration
 
-Administrators without an assigned granular role retain legacy broad administrator access. Assign an appropriate role when restricted administrative access is required.
+1. **Secure access.** Replace or trust the HTTPS certificate, restrict management network access, and review administrator roles under **Platform**.
+2. **Add devices.** In **TACACS+ → Devices**, create inventory records or use network discovery. Configure each device's AAA shared secret as needed.
+3. **Connect identities.** Create local users/groups or configure **Platform → Active Directory** with the appropriate directory and certificate trust settings.
+4. **Build authorization.** Create **Command Sets** and **Policies**, select the intended users/groups and devices, and review the effective restrictions.
+5. **Preview before applying.** Open **TACACS+ → Configuration**, inspect validation messages and the candidate diff, and apply only when it matches your intent.
+6. **Test with a lab device.** Confirm both permitted and denied commands, then inspect **Accounting**, **Sessions**, and **Access Events**.
+7. **Explore other modules.** Try Security Center audits, NCM configuration archives/diffs, and Network Operations command jobs on authorized devices.
 
-## Important limitations
+**Important:** Saving a policy is not the same as applying it to the AAA daemon. The policy simulator is a planning aid; verify real decisions against the target NAS.
 
-- TACACS+ and RADIUS behavior depends on the installed tac_plus-ng build and the target NAS/device.
-- RADIUS command-level authorization is not supported.
-- Directory membership and native daemon behavior should be tested in the target AD/MAVIS environment.
-- Dependency-aware deletion protection and some historical policy migration cases require administrator review.
-- The policy simulator is advisory and does not replace native AAA testing.
-- PostgreSQL-specific transaction/security verification was not executed in the available release-validation environment.
+## Operations and limitations
+
+- Test directory integration, device-specific authentication behavior, and authorization on the actual NAS and identity infrastructure before broad deployment.
+- Policy scopes with unresolved or invalid references can block an AAA configuration apply rather than silently becoming unrestricted.
+- NCM backups, comparisons, and schedule management are available; **verify that scheduled backups actually run and retain their archives in your environment before relying on unattended backup schedules**.
+- Back up the PostgreSQL database **and** the associated configuration/encryption material. A generated AAA configuration backup alone is not a full platform backup.
+- Upgrading an existing populated deployment is not a guaranteed one-command schema migration. Read the [upgrade and recovery guide](docs/UPGRADE.md) before attempting an upgrade.
+- Some directory authority modes, historical policy restoration scenarios, and advanced RADIUS capabilities have limitations. See the [configuration guide](docs/CONFIGURATION.md).
 
 ## Documentation
 
-- [Installation guide](docs/INSTALL.md)
-- [Configuration guide](docs/CONFIGURATION.md)
-- [Upgrade and recovery](docs/UPGRADE.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Testing](docs/TESTING.md)
-- [Licensing](docs/LICENSING.md)
-- [Changelog](CHANGELOG.md)
-- [Security reporting](SECURITY.md)
+| Guide | What it covers |
+| --- | --- |
+| [Install](docs/INSTALL.md) | Supported hosts, installation, initial access, network ports, services, and uninstall |
+| [Configuration](docs/CONFIGURATION.md) | Identity, policies, validation, application, and operational limitations |
+| [Troubleshooting](docs/TROUBLESHOOTING.md) | Connectivity, service checks, AAA problems, and backup verification |
+| [Upgrade & recovery](docs/UPGRADE.md) | Pre-upgrade backups, compatibility checks, and recovery planning |
+| [Licensing](docs/LICENSING.md) | Free five-device Community edition and signed licence limits |
+| [Architecture](docs/ARCHITECTURE.md) | High-level platform layout and security boundaries |
+| [Changelog](CHANGELOG.md) | User-visible changes in the current published source |
+| [Security reporting](SECURITY.md) | Private vulnerability reporting and deployment responsibilities |
+| [Contributor testing](docs/TESTING.md) | Optional test instructions for contributors |
 
 ## Licensing
 
-The source is distributed under the [Apache License 2.0](LICENSE). The Community edition supports up to five devices. Larger limits use signed licence entitlements.
+NetOpsGuard's source code is available under the [Apache License 2.0](LICENSE). Runtime editions use device-count entitlements: **Community is free for up to five devices**, and signed licences allow larger fleets. Read [docs/LICENSING.md](docs/LICENSING.md) for details.
 
-## Security reports
+## Support, feedback, and security
 
-Do not publish credentials, private keys, generated AAA configuration, database dumps, or exploit details in public issues. Follow [SECURITY.md](SECURITY.md) for private vulnerability reporting.
+Use [GitHub Issues](https://github.com/jafartavana01/NetOpsGuard/issues) for bug reports, questions, and feature suggestions. Include the affected version or commit, relevant sanitized logs, and steps to reproduce; **never post secrets, private keys, device configurations, or customer information**.
 
-## Project status
+For potential vulnerabilities, follow the private disclosure instructions in [SECURITY.md](SECURITY.md) instead of opening a public exploit report.
 
-NetOpsGuard is actively developed. Some planned capabilities remain outside the current release, including additional identity-authority modes, advanced RADIUS authorization behavior, and broader lifecycle protections. Review the documentation and test the release in a lab before production deployment.
+**Project status:** NetOpsGuard is actively developed. The presence of a feature in the UI does not guarantee compatibility with every device, daemon build, or production environment; validate your critical AAA, NCM, and recovery workflows before production use.
