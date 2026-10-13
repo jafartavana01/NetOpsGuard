@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "If NetOpsGuard helps your research or publication, please cite this repository."
+type: software
+title: "NetOpsGuard: Network AAA and Security Operations"
+authors:
+  - family-names: "Tavana"
+    given-names: "Jafar"
+repository-code: "https://github.com/jafartavana01/NetOpsGuard"
+url: "https://github.com/jafartavana01/NetOpsGuard"
+license: "Apache-2.0"
+abstract: "A self-hosted network operations platform combining TACACS+ AAA, authorization policies, configuration management and Cisco security auditing."

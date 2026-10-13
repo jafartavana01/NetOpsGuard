@@ -1,0 +1,21 @@
+title: "NetOpsGuard"
+description: "Self-hosted TACACS+ AAA, Cisco command authorization, Active Directory integration, network configuration backup, and security auditing."
+url: "https://jafartavana01.github.io"
+baseurl: "/NetOpsGuard"
+repository: "jafartavana01/NetOpsGuard"
+lang: "en"
+markdown: kramdown
+permalink: pretty
+plugins:
+  - jekyll-sitemap
+exclude:
+  - gui01
+  - gui02
+  - gui03
+  - gui04
+  - dependencies
+  - TESTING.md
+  - ARCHITECTURE.md
+  - SEO-SETUP.md
+  - Gemfile
+  - Gemfile.lock
