@@ -11,6 +11,10 @@ permalink: /faq/
 
 The source is provided under the **Apache License 2.0**. The **Community** edition supports up to **five devices**, with the currently available platform features; higher device limits use signed licences. See [licensing](https://github.com/jafartavana01/NetOpsGuard/blob/main/docs/LICENSING.md).
 
+## How can I request a licence for more than five devices?
+
+You can request a signed licence by emailing [tavanajafar2@gmail.com](mailto:tavanajafar2@gmail.com) or contacting the maintainer via [Telegram @Powerinfossl](https://t.me/Powerinfossl). The [licensing information page]({{ '/licensing/' | relative_url }}) lists the WhatsApp ID, phone contact and request process.
+
 ## Can NetOpsGuard authorize individual Cisco commands?
 
 Yes, through its **TACACS+ command sets and policies** on compatible network devices. Define the identity and device scope, apply the resulting AAA configuration, and verify actual allow/deny results on your NAS. [Read the command authorization guide]({{ '/guides/tacacs-command-authorization/' | relative_url }}).

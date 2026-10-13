@@ -47,3 +47,12 @@ The management plane runs on Ubuntu Server and uses PostgreSQL for application s
 ## Try NetOpsGuard
 
 Read the [quick installation guide]({{ '/guides/getting-started/' | relative_url }}) or go directly to [NetOpsGuard on GitHub](https://github.com/jafartavana01/NetOpsGuard) for the complete source, Apache-2.0 licence, and issue tracker.
+
+## Licence requests and contact
+
+The Community edition supports five devices for free. To request a licence for more devices or ask about licence migration, read the [NetOpsGuard licensing information]({{ '/licensing/' | relative_url }}) or contact the maintainer:
+
+- **Email:** [tavanajafar2@gmail.com](mailto:tavanajafar2@gmail.com)
+- **Telegram:** [@Powerinfossl](https://t.me/Powerinfossl)
+- **WhatsApp ID:** `@jafartavana0`
+- **Phone:** [+98 917 011 8221](tel:+989170118221) (`00989170118221`)

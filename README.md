@@ -121,6 +121,17 @@ The management port and certain service settings are configurable. Open only the
 
 NetOpsGuard's source code is available under the [Apache License 2.0](LICENSE). Runtime editions use device-count entitlements: **Community is free for up to five devices**, and signed licences allow larger fleets. Read [docs/LICENSING.md](docs/LICENSING.md) for details.
 
+### Request a NetOpsGuard licence
+
+For more than five managed devices, licence pricing, or licence migration questions, contact the project maintainer through one of these channels:
+
+- **Email:** [tavanajafar2@gmail.com](mailto:tavanajafar2@gmail.com)
+- **Telegram:** [@Powerinfossl](https://t.me/Powerinfossl)
+- **WhatsApp ID:** `@jafartavana0`
+- **Phone:** [+98 917 011 8221](tel:+989170118221) (`00989170118221`)
+
+Include the requested device limit and a short description of your deployment. For machine-bound licences, send the generated licence request **privately**; never publish it or any passwords, keys, or production configuration in GitHub issues.
+
 ## Support, feedback, and security
 
 Use [GitHub Issues](https://github.com/jafartavana01/NetOpsGuard/issues) for bug reports, questions, and feature suggestions. Include the affected version or commit, relevant sanitized logs, and steps to reproduce; **never post secrets, private keys, device configurations, or customer information**.
