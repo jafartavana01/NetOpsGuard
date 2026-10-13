@@ -4,7 +4,8 @@
 {% block breadcrumb %}Security Center / Findings{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content security-workspace">
+  {% include "partials/security_workspace.html" %}
   <div class="content-head">
     <h1>Findings</h1>
     <p class="content-sub">Every finding from each device's own most recent audit — fleet-wide, filterable.</p>
@@ -36,7 +37,7 @@
           <option value="fail">Fail</option>
           <option value="pass">Pass</option>
           <option value="manual_review">Manual Review</option>
-          <option value="na">Not Applicable</option>
+          <option value="na">Not Applicable</option><option value="warn">Partial control</option>
         </select>
       </div>
     </label>
@@ -67,6 +68,8 @@
     </label>
   </div>
 
+  <p class="security-note">Observations from each device’s latest completed audit. Fail, pass, partial control, manual review and not applicable are assessment outcomes, not a resolution workflow.</p>
+  <div class="security-actions"><span id="active-filters" aria-live="polite"></span><button id="clear-filters" class="btn-secondary btn-small">Clear filters</button></div>
   <div id="findings-table-wrap">
     <div class="empty-state">Loading…</div>
   </div>
@@ -97,6 +100,8 @@
 {% block view_scripts %}
 <script>
 (() => {
+  SecurityUI.mount();
+  const document=SecurityUI.scopeDocument();
   // Pre-rendered server-side via Jinja (see the top-of-file macro
   // import) since this markup is built client-side.
   const ICON_ALERT = '{{ icons.icon("alert-triangle", 16) }}';
@@ -159,6 +164,7 @@
     const deviceId = params.get('device_id');
     if (severity) document.getElementById('filter-severity').value = severity;
     if (status) document.getElementById('filter-status').value = status;
+    document.getElementById('filter-search').value=params.get('check_id')||'';
     return { domain, deviceId };
   }
 
@@ -168,7 +174,8 @@
     select.innerHTML = existing + values.map((v) =>
       '<option value="' + escapeHtml(v.value) + '">' + escapeHtml(v.label) + '</option>'
     ).join('');
-    if (selectedValue && values.some((v) => v.value === selectedValue)) select.value = selectedValue;
+    if(selectedValue&&!values.some(v=>v.value===selectedValue)){const option=document.createElement('option');option.value=selectedValue;option.textContent='Requested value (no current observations)';select.append(option);}
+    if(selectedValue)select.value=selectedValue;
   }
 
   function renderSummary() {
@@ -183,7 +190,7 @@
       '<div class="status-card-body"><div class="status-card-title">' + label + '</div>' +
       '<div class="status-card-value">' + value + '</div></div></div>';
     document.getElementById('findings-summary').innerHTML = [
-      card(ICON_LIST, 'Total Findings', allFindings.length, ''),
+      card(ICON_LIST, 'Stored observations', allFindings.length, ''),
       card(ICON_ALERT, 'Critical', counts.critical, 'is-red'),
       card(ICON_ALERT, 'High', counts.high, 'is-red'),
       card(ICON_ALERT, 'Medium', counts.medium, 'is-amber'),
@@ -209,6 +216,7 @@
       }
       return true;
     });
+    document.getElementById('active-filters').textContent=[severity,status,deviceId?document.getElementById('filter-device').selectedOptions[0].textContent:'',domain,search].filter(Boolean).join(' · ')||'All observations';
     page = 1;
     renderTable();
   }
@@ -291,8 +299,8 @@
       section('Risk', finding.risk ? '<p class="drawer-text">' + escapeHtml(finding.risk) + '</p>' : '') +
       section('Detail', finding.detail ? '<p class="drawer-text">' + escapeHtml(finding.detail) + '</p>' : '') +
       section(escapeHtml(finding.evidence_label || 'Evidence'), evidenceHtml) +
-      section('Recommendation', finding.recommendation ? '<p class="drawer-text">' + escapeHtml(finding.recommendation) + '</p>' : '') +
-      section('Proposed fix', finding.fix_command ? '<div class="diff-view">' + escapeHtml(finding.fix_command) + '</div>' : '') +
+      section('Recommendation', '<p class="drawer-text">' + escapeHtml(finding.recommendation||'No recommendation supplied.') + '</p>') +
+      section('Suggested configuration · review before use', finding.fix_command ? '<div class="diff-view">' + escapeHtml(finding.fix_command) + '</div>' : '') +
       section('Compliance', complianceEntries.length
         ? '<div>' + complianceEntries.map(([framework, controls]) =>
             '<div class="readout"><span class="readout-k">' + escapeHtml(framework) + '</span>' +
@@ -300,6 +308,7 @@
           ).join('') + '</div>'
         : '') +
       '<div style="margin-top:18px;display:flex;gap:8px;flex-wrap:wrap;">' +
+      '<a class="btn-secondary btn-small" href="/security/reports?audit_id='+encodeURIComponent(finding.audit_run_id)+'">Open saved audit</a>' +
       (finding.device_id ? '<a href="/security/devices/' + finding.device_id + '" class="btn-secondary btn-small">View Device</a>' : '') +
       '</div>';
 
@@ -377,6 +386,7 @@
     applyFilters();
   }
 
+  document.getElementById('clear-filters').onclick=()=>{['filter-severity','filter-status','filter-device','filter-domain','filter-search'].forEach(id=>document.getElementById(id).value='');applyFilters();};
   loadFindings();
 })();
 </script>

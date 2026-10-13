@@ -4,7 +4,8 @@
 {% block breadcrumb %}Security Center / Overview{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content security-workspace">
+  {% include "partials/security_workspace.html" %}
   <div class="content-head" style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
     <div>
       <h1>Security Center</h1>
@@ -13,6 +14,8 @@
     <button type="button" class="btn-primary btn-with-icon" id="open-audit-modal-btn" style="width:auto;">{{ icons.icon('plus', 16) }}Run Security Audit</button>
   </div>
 
+  <div id="security-coverage" class="security-coverage" aria-live="polite">Loading inventory coverage…</div>
+  <div class="security-actions"><a href="/security/devices" class="btn-secondary">View devices</a><a href="/security/findings?status=fail" class="btn-secondary">Failing observations</a><a href="/security/reports" class="btn-secondary">Audit history & reports</a></div>
   <section class="sec-grid sec-grid-posture">
     <div class="panel panel-wide sec-gauge-panel">
       <div class="panel-head"><span class="rail rail-dim"></span>Security Posture</div>
@@ -26,12 +29,24 @@
         </svg>
         <div class="sec-gauge-value" id="gauge-score">—</div>
         <div class="sec-gauge-label" id="gauge-status">No audit data</div>
-        <div class="content-sub" style="text-align:center;margin-top:8px;font-size:11.5px;">Based on latest available audit results</div>
+        <div class="content-sub" style="text-align:center;margin-top:8px;font-size:11.5px;">Latest completed audit per linked device; scores exclude missing values</div>
         <div id="gauge-delta" class="sec-delta" hidden></div>
       </div>
     </div>
 
     <div class="status-card-grid sec-kpi-grid" id="kpi-grid"></div>
+  </section>
+
+  <section class="sec-grid sec-grid-risk">
+    <div class="panel panel-wide">
+      <div class="panel-head"><span class="rail rail-red"></span>Lowest recorded scores · up to 10 devices</div>
+      <div class="panel-body" id="risky-devices-body"><div class="empty-state">Loading…</div></div>
+    </div>
+
+    <div class="panel panel-wide">
+      <div class="panel-head"><span class="rail rail-red"></span>Top Security Risks</div>
+      <div class="panel-body" id="top-risks-body"><div class="empty-state">Loading…</div></div>
+    </div>
   </section>
 
   <section class="sec-grid sec-grid-charts">
@@ -41,7 +56,7 @@
         <canvas id="severity-chart"></canvas>
         <div id="severity-center" style="position:absolute;top:42%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;">
           <div class="sec-donut-total" id="severity-total">—</div>
-          <div class="sec-donut-sub">Total Findings</div>
+          <div class="sec-donut-sub">Failing observations</div>
         </div>
       </div>
       <div class="panel-body" id="severity-legend" style="padding-top:0;"></div>
@@ -55,27 +70,15 @@
 
   <section class="sec-grid sec-grid-trend">
     <div class="panel panel-wide">
-      <div class="panel-head"><span class="rail rail-dim"></span>Security Score Trend</div>
+      <div class="panel-head"><span class="rail rail-dim"></span>Recent completed audit scores (individual runs)</div>
       <div class="panel-body" style="height:220px;position:relative;" id="trend-body">
         <canvas id="trend-chart"></canvas>
       </div>
     </div>
 
     <div class="panel panel-wide">
-      <div class="panel-head"><span class="rail rail-dim"></span>Compliance Posture</div>
+      <div class="panel-head"><span class="rail rail-dim"></span>Mapped technical controls</div>
       <div class="panel-body" id="compliance-body"><div class="empty-state">Loading…</div></div>
-    </div>
-  </section>
-
-  <section class="sec-grid sec-grid-risk">
-    <div class="panel panel-wide">
-      <div class="panel-head"><span class="rail rail-red"></span>Highest Risk Devices</div>
-      <div class="panel-body" id="risky-devices-body"><div class="empty-state">Loading…</div></div>
-    </div>
-
-    <div class="panel panel-wide">
-      <div class="panel-head"><span class="rail rail-red"></span>Top Security Risks</div>
-      <div class="panel-body" id="top-risks-body"><div class="empty-state">Loading…</div></div>
     </div>
   </section>
 
@@ -103,7 +106,7 @@
 
   <div class="content-head">
     <h2>Audit Activity</h2>
-    <p class="content-sub">Recent audit runs, newest first. Score changes compare each device against its own previous audit.</p>
+    <p class="content-sub">Latest 15 recorded audit runs, including failures. Scores describe completed assessments; timestamps use your browser time zone.</p>
   </div>
   <div class="panel panel-wide">
     <div class="panel-body" id="activity-body"><div class="empty-state">Loading…</div></div>
@@ -161,6 +164,8 @@
 {% block view_scripts %}
 <script>
 (() => {
+  SecurityUI.mount();
+  const document=SecurityUI.scopeDocument();
   // Pre-rendered server-side via Jinja (see the top-of-file macro
   // import) since this markup is built client-side.
   const ICON_SERVER = '{{ icons.icon("server", 16) }}';
@@ -236,11 +241,7 @@
   }
 
   function scoreStatusLabel(score) {
-    if (score == null) return 'No audit data';
-    if (score >= 90) return 'Excellent';
-    if (score >= 75) return 'Good';
-    if (score >= 60) return 'Fair';
-    return 'Poor';
+    return score == null ? 'Score unavailable' : 'Recorded score / 100';
   }
 
   function renderGauge(score, previous) {
@@ -257,13 +258,13 @@
       deltaEl.hidden = false;
       if (diff > 0) {
         deltaEl.className = 'sec-delta is-signal';
-        deltaEl.textContent = '▲ +' + diff + ' since previous audit';
+        deltaEl.textContent = '▲ +' + diff + ' vs previous-run average (population may differ)';
       } else if (diff < 0) {
         deltaEl.className = 'sec-delta is-red';
-        deltaEl.textContent = '▼ ' + diff + ' since previous audit';
+        deltaEl.textContent = '▼ ' + diff + ' vs previous-run average (population may differ)';
       } else {
         deltaEl.className = 'sec-delta';
-        deltaEl.textContent = 'No change since previous audit';
+        deltaEl.textContent = 'No change vs previous-run average (population may differ)';
       }
     } else {
       deltaEl.hidden = true;
@@ -294,7 +295,7 @@
       kpiCard(ICON_ALERT, 'Medium', countFor(data, 'medium'), 'is-amber', '/security/findings?severity=medium'),
       kpiCard(ICON_EYE, 'Manual Review', data.manual_review_findings, '', '/security/findings?status=manual_review'),
       kpiCard(ICON_LIST, 'Failed Checks', data.failed_checks, 'is-red', '/security/findings?status=fail'),
-      kpiCard(ICON_SHIELD, 'Compliance', data.compliance_score != null ? data.compliance_score + '%' : '—', scoreClass(data.compliance_score)),
+      kpiCard(ICON_SHIELD, 'Stored compliance score', data.compliance_score != null ? data.compliance_score + '%' : '—', scoreClass(data.compliance_score)),
     ].join('');
   }
 
@@ -302,7 +303,7 @@
     await ensureChartJsLoaded();
     const rows = data.severity_counts;
     const total = rows.reduce((sum, r) => sum + r.count, 0);
-    document.getElementById('severity-total').textContent = total > 0 ? total : '—';
+    document.getElementById('severity-total').textContent = data.devices_audited ? total : '—';
 
     const canvas = document.getElementById('severity-chart');
     const existing = window.Chart.getChart(canvas);
@@ -418,11 +419,11 @@
       return;
     }
     body.innerHTML =
-      '<table class="data-table"><thead><tr><th>Device</th><th>Score</th><th>Critical</th><th>High</th><th>Medium</th><th>Status</th></tr></thead><tbody>' +
+      '<table class="data-table"><thead><tr><th>Device / IP / last completed audit</th><th>Score</th><th>Critical</th><th>High</th><th>Medium</th><th>Status</th></tr></thead><tbody>' +
       data.risky_devices.map((d) =>
         '<tr><td>' +
         (d.device_id ? '<a href="/security/devices/' + d.device_id + '">' + escapeHtml(d.device_name) + '</a>' : escapeHtml(d.device_name)) +
-        '</td><td><span class="sec-inline-bar"><span class="sec-inline-bar-fill" style="width:' +
+        '<div class="security-note">'+escapeHtml(inventory.find(x=>x.id===d.device_id)?.ip_address||'IP unavailable')+'<br>'+escapeHtml(SecurityUI.dt(inventory.find(x=>x.id===d.device_id)?.latest_audited_at))+'</div></td><td><span class="sec-inline-bar"><span class="sec-inline-bar-fill" style="width:' +
         (d.score != null ? Math.max(2, d.score) : 0) + '%;background:' + scoreColorVar(d.score) + ';"></span></span>' +
         '<span class="cell-mono" style="margin-left:6px;">' + (d.score != null ? d.score : '—') + '</span></td>' +
         '<td class="cell-mono">' + d.critical + '</td><td class="cell-mono">' + d.high + '</td><td class="cell-mono">' + d.medium + '</td>' +
@@ -442,7 +443,7 @@
       '<span class="badge sec-sev-badge" style="border-color:' + severityColor(r.severity) + ';color:' + severityColor(r.severity) + ';">' +
       escapeHtml((SEVERITY_META[r.severity] || {}).label || r.severity) + '</span>' +
       '<span class="content-sub">' + escapeHtml(r.device_name) + '</span></div>' +
-      '<div class="sec-risk-title">' + escapeHtml(r.title) + '</div>' +
+      '<a class="sec-risk-title" href="/security/findings?device_id='+encodeURIComponent(r.device_id||'')+'&check_id='+encodeURIComponent(r.check_id)+'">' + escapeHtml(r.title) + '</a>' +
       '<div class="content-sub" style="font-size:11.5px;">' + escapeHtml(r.domain) + '</div></div>'
     ).join('');
   }
@@ -515,7 +516,7 @@
     const rows = [...byDevice.entries()].map(([name, info]) => {
       const cells = domains.map((domain) => {
         const cell = info.cells.get(domain);
-        if (!cell) return '<td class="sec-heat-cell is-na" title="Not applicable">—</td>';
+        if (!cell) return '<td class="sec-heat-cell is-na" title="No stored domain result">—</td>';
         const title = name + ' · ' + domain + ' · score ' + cell.score + ' · ' + cell.fail_count + ' failing · ' + cell.manual_count + ' manual review';
         return '<td class="sec-heat-cell ' + heatCellClass(cell.score) + '" title="' + escapeHtml(title) + '"><span class="cell-mono">' + Math.round(cell.score) + '</span></td>';
       }).join('');
@@ -525,6 +526,12 @@
     body.innerHTML = '<table class="data-table sec-heatmap"><thead>' + head + '</thead><tbody>' + rows + '</tbody></table>';
   }
 
+  let inventory=[],dashboardData=null;
+  async function loadCoverage(){
+    const body=document.getElementById('security-coverage');
+    try{inventory=await OpsUI.request('/api/security/devices');const audited=inventory.filter(d=>d.latest_audit_run_id).length;body.innerHTML='<div>Inventory devices<strong>'+inventory.length+'</strong>All configured devices</div><div>Awaiting completed audit<strong>'+(inventory.length-audited)+'</strong>Not established as secure</div><div>With completed audit<strong>'+audited+'</strong>Current inventory only</div>';if(dashboardData)renderRiskyDevices(dashboardData);}
+    catch(e){body.textContent='Inventory coverage unavailable. '+e.message;}
+  }
   async function loadDashboard() {
     let res;
     try {
@@ -544,7 +551,7 @@
       });
       return;
     }
-    const data = await res.json();
+    const data = await res.json();dashboardData=data;
 
     renderGauge(data.average_score, data.previous_average_score);
     renderKpis(data);
@@ -555,8 +562,7 @@
     renderHeatmap(data);
     renderScoreExplanation(data);
     renderManualReview(data);
-    await renderSeverityChart(data);
-    await renderTrend(data);
+    try{await renderSeverityChart(data);await renderTrend(data);}catch{document.getElementById('severity-legend').textContent='Chart unavailable. Failing observations: '+data.failed_checks;}
   }
 
   // --- Run Security Audit: device picker ---------------------------
@@ -654,12 +660,14 @@
     const errorBox = document.getElementById('audit-error');
     errorBox.hidden = true;
     const ids = [...pickerSelected];
+    if(!SecurityUI.can('security:audit'))return;
     if (!ids.length) {
       errorBox.textContent = 'Select at least one device to audit.';
       errorBox.hidden = false;
       return;
     }
 
+    if(!window.confirm('Audit '+ids.length+' selected devices using the saved service account?'))return;
     const btn = document.getElementById('run-audit-btn');
     btn.disabled = true;
     const originalHtml = btn.innerHTML;
@@ -690,7 +698,8 @@
     pickerSelected.clear();
     AAAPlatform.toast(
       'Audit #' + result.batch_display_number + ' finished \u2014 ' +
-      result.succeeded + '/' + result.total_devices + ' devices audited.');
+      result.succeeded + '/' + result.total_devices + ' devices audited · '+result.status, result.status==='completed'?'success':'error');
+    loadCoverage();
     loadDashboard();
     loadActivity();
   });
@@ -732,14 +741,15 @@
         '<span class="sec-timeline-dot ' + (e.status === 'completed' ? 'is-signal' : (e.status === 'failed' ? 'is-red' : '')) + '"></span>' +
         '<div class="sec-timeline-body">' +
         '<div class="sec-timeline-line">' + name +
-        ' <span class="content-sub">audited — ' + escapeHtml(scoreText) + '</span> ' + delta + '</div>' +
+        ' <span class="content-sub">'+escapeHtml(e.status)+' — ' + escapeHtml(scoreText) + '</span> ' + delta + '</div>' +
         '<div class="content-sub" style="font-size:11px;">' +
         new Date(e.started_at).toLocaleString() + ' · ' + escapeHtml(e.source) +
-        (e.status !== 'completed' ? ' · ' + escapeHtml(e.status) : '') +
+        ' · <a href="/security/reports?audit_id='+encodeURIComponent(e.audit_run_id)+'">Open saved audit</a>' +
         '</div></div></li>';
     }).join('') + '</ol>';
   }
 
+  loadCoverage();
   loadDashboard();
   loadActivity();
 })();

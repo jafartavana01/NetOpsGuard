@@ -1,0 +1,9 @@
+<nav class="security-nav" aria-label="Security workspace">
+{% for url,label in [('/security/overview','Overview'),('/security/devices','Devices'),('/security/findings','Findings'),('/security/compliance','Mapped controls'),('/security/reports','Audit history & reports')] %}
+<a href="{{ url }}" {% if request.url.path == url %}aria-current="page"{% endif %}>{{ label }}</a>
+{% endfor %}
+{% if is_superadmin %}<a href="/security/schedule" {% if request.url.path == '/security/schedule' %}aria-current="page"{% endif %}>Scheduled audits</a>{% endif %}
+</nav>
+<p class="security-context">Technical assessment of stored configuration. Missing or unevaluated results do not establish security or certification.</p>
+<script type="application/json" id="security-grants">{{ (security_permissions|default([]))|tojson }}</script>
+<script type="application/json" id="security-superadmin">{{ (is_superadmin|default(false))|tojson }}</script>

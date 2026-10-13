@@ -4,7 +4,8 @@
 {% block breadcrumb %}Security Center / Audit Reports / Detail{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content security-workspace">
+  {% include "partials/security_workspace.html" %}
   <div id="report-not-found" class="content-head" hidden>
     <h1>Audit report not found</h1>
   </div>
@@ -18,7 +19,7 @@
         </div>
         <div class="content-sub" style="margin-top:6px;" id="report-meta-line"></div>
       </div>
-      <button type="button" class="btn-secondary btn-with-icon" id="report-run-again-btn" style="width:auto;">{{ icons.icon('activity', 16) }}Run New Audit</button>
+      <button type="button" class="btn-secondary btn-with-icon" id="report-run-again-btn" style="width:auto;">{{ icons.icon('activity', 16) }}Audit all enabled devices</button>
     </div>
 
     <div class="content-head">
@@ -28,7 +29,7 @@
 
     <section class="panel-grid" style="grid-template-columns: 1fr 1fr; margin-bottom:1px;">
       <div class="panel panel-wide">
-        <div class="panel-head"><span class="rail rail-dim"></span>Risk Distribution</div>
+        <div class="panel-head"><span class="rail rail-dim"></span>Findings by severity</div>
         <div class="panel-body" style="height:220px;position:relative;">
           <canvas id="risk-chart"></canvas>
           <div id="risk-chart-center" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;">
@@ -79,6 +80,8 @@
 {% block view_scripts %}
 <script>
 (() => {
+  SecurityUI.mount();
+  const document=SecurityUI.scopeDocument();
   // Pre-rendered server-side via Jinja (see the top-of-file macro
   // import) since this markup is built client-side.
   const ICON_ACTIVITY = '{{ icons.icon("activity", 16) }}';
@@ -167,25 +170,25 @@
       <div class="status-card is-red">
         <div class="status-card-icon">${ICON_ACTIVITY}</div>
         <div class="status-card-body">
-          <div class="status-card-title">High Risk</div>
+          <div class="status-card-title">High-severity findings</div>
           <div class="status-card-value">${s.high_count}</div>
         </div>
       </div>
       <div class="status-card is-amber">
         <div class="status-card-icon">${ICON_ACTIVITY}</div>
         <div class="status-card-body">
-          <div class="status-card-title">Medium Risk</div>
+          <div class="status-card-title">Medium-severity findings</div>
           <div class="status-card-value">${s.medium_count}</div>
         </div>
       </div>
-      <div class="status-card is-signal">
+      <div class="status-card">
         <div class="status-card-icon">${ICON_ACTIVITY}</div>
         <div class="status-card-body">
-          <div class="status-card-title">Low Risk</div>
+          <div class="status-card-title">Low-severity findings</div>
           <div class="status-card-value">${s.low_count}</div>
         </div>
       </div>
-      <div class="status-card ${s.average_score != null && s.average_score >= 85 ? 'is-signal' : (s.average_score != null && s.average_score >= 60 ? 'is-amber' : 'is-red')}">
+      <div class="status-card ${s.average_score == null ? '' : s.average_score >= 85 ? 'is-signal' : (s.average_score != null && s.average_score >= 60 ? 'is-amber' : 'is-red')}">
         <div class="status-card-icon">${ICON_ACTIVITY}</div>
         <div class="status-card-body">
           <div class="status-card-title">Avg Security Score</div>
@@ -215,7 +218,7 @@
         labels: total > 0 ? ['Critical', 'High', 'Medium', 'Low'] : ['No findings'],
         datasets: [{
           data: total > 0 ? [s.critical_count, s.high_count, s.medium_count, s.low_count] : [1],
-          backgroundColor: total > 0 ? [redColor, '#c0392b', amberColor, signalColor] : [textFaint],
+          backgroundColor: total > 0 ? [redColor, '#c0392b', amberColor, textFaint] : [textFaint],
           borderColor: 'transparent',
         }],
       },
@@ -298,7 +301,7 @@
     }
     wrap.innerHTML = `
       <table class="data-table">
-        <thead><tr><th>Device</th><th>IP Address</th><th>High</th><th>Medium</th><th>Low</th><th>Score</th><th>Status</th><th>Last Scan</th></tr></thead>
+        <thead><tr><th>Device</th><th>IP Address</th><th>Critical + high</th><th>Medium</th><th>Low</th><th>Score</th><th>Risk</th><th>Execution</th><th>Started</th></tr></thead>
         <tbody>
           ${rows.map(d => `
             <tr>
@@ -308,7 +311,7 @@
               <td>${d.medium}</td>
               <td>${d.low}</td>
               <td>${d.score != null ? d.score : '—'}</td>
-              <td><span class="rail ${riskRail(d.risk_level)}" style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;"></span>${escapeHtml(d.risk_level || d.status)}</td>
+              <td><span class="rail ${riskRail(d.risk_level)}" style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;"></span>${escapeHtml(d.risk_level || 'Unavailable')}</td><td>${SecurityUI.badge(d.status)}</td>
               <td class="content-sub">${new Date(d.last_scan_at).toLocaleString()}</td>
             </tr>
           `).join('')}
@@ -327,16 +330,17 @@
   document.getElementById('device-search-input').addEventListener('input', renderDeviceTable);
 
   document.getElementById('report-run-again-btn').addEventListener('click', async () => {
+    if(!window.confirm('Audit all enabled devices with the saved service account? This is a new fleet run, not a repeat of the report target selection.'))return;
     const btn = document.getElementById('report-run-again-btn');
     btn.disabled = true;
-    const res = await AAAPlatform.authedFetch('/api/security/schedule/run-now', { method: 'POST' });
+    const res = await SecurityUI.safeFetch('/api/security/schedule/run-now', { method: 'POST' });
     btn.disabled = false;
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       AAAPlatform.toast((body.detail && typeof body.detail === 'string') ? body.detail : 'Could not start a new audit.', 'error');
       return;
     }
-    AAAPlatform.toast('New audit started — view it from Audit Reports once complete.');
+    const result=await res.json();AAAPlatform.toast('Fleet audit result: '+result.last_run_status+'. '+(result.last_run_summary||''),result.last_run_status==='completed'?'success':'error');
   });
 
   async function loadReport() {
@@ -349,7 +353,7 @@
     if (!res || !res.ok) {
       document.getElementById('report-not-found').hidden = false;
       document.getElementById('report-not-found').querySelector('h1').textContent =
-        res && res.status === 403 ? "Your role doesn't have permission to view this report." : 'Audit report not found';
+        res && res.status === 403 ? "Your role doesn't have permission to view this report." : res?.status===404?'Audit report not found':'Report unavailable — try again';
       return;
     }
     const s = await res.json();
@@ -360,19 +364,22 @@
     badge.textContent = s.status;
     badge.className = `badge ${statusBadgeClass(s.status)}`;
     document.getElementById('report-meta-line').textContent =
-      `${escapeHtml(s.target_description)} — Started ${new Date(s.started_at).toLocaleString()}` +
+      `${s.target_description} — Started ${new Date(s.started_at).toLocaleString()}` +
+      (s.completed_at ? ` — Completed ${new Date(s.completed_at).toLocaleString()}` : '') +
+      (s.source ? ` — Source ${s.source}` : '') +
       (s.duration_seconds != null ? ` — Duration ${Math.floor(s.duration_seconds / 60)}m ${s.duration_seconds % 60}s` : '') +
-      (s.started_by_admin_username ? ` — by ${escapeHtml(s.started_by_admin_username)}` : '');
+      (s.started_by_admin_username ? ` — by ${s.started_by_admin_username}` : '');
 
     renderSummary(s);
     renderQuickActions();
-    await renderRiskChart(s);
+    try{await renderRiskChart(s);}catch{document.getElementById('risk-chart-total').textContent='Chart unavailable';}
     renderCategoryBreakdown(s.category_breakdown);
     renderTopFindings(s.top_findings);
     currentDevices = s.devices;
     renderDeviceTable();
   }
 
+  OpsUI.table('device-table-wrap',{search:false});
   loadReport();
 })();
 </script>

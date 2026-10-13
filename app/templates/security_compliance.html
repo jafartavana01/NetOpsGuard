@@ -4,12 +4,14 @@
 {% block breadcrumb %}Security Center / Compliance{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content security-workspace">
+  {% include "partials/security_workspace.html" %}
   <div class="content-head">
-    <h1>Compliance Posture</h1>
-    <p class="content-sub">Control-level compliance across the fleet, from each device's most recent audit. A control counts as failing if any audited device fails it.</p>
+    <h1>Mapped Controls</h1>
+    <p class="content-sub">Technical assessment from each device’s latest completed audit. These mappings are not certification. Percentages cover passing and failing controls only; manual review and not-applicable results are separate.</p>
   </div>
 
+  <div class="toolbar"><label class="field">Framework<select id="framework-filter"><option value="">All recorded frameworks</option></select></label><label class="field">Control result<select id="control-status"><option value="">All results</option><option value="fail">Failing</option><option value="pass">Passing</option><option value="manual_review">Manual review</option><option value="na">Not applicable</option></select></label><label class="field">Control ID<input id="control-search" type="search" placeholder="Search recorded controls…"></label></div>
   <div id="compliance-body">
     <div class="empty-state">Loading…</div>
   </div>
@@ -26,6 +28,8 @@
 {% block view_scripts %}
 <script>
 (() => {
+  SecurityUI.mount();
+  const document=SecurityUI.scopeDocument();
   function escapeHtml(s) {
     // Escapes quotes as well as angle brackets, so the result is safe
     // inside an HTML ATTRIBUTE and not only in text position. The
@@ -69,10 +73,13 @@
     if (!fw.controls.length) {
       return '<div class="empty-state">No controls recorded for this framework.</div>';
     }
+    const status=document.getElementById('control-status').value,q=document.getElementById('control-search').value.toLowerCase();
+    const controls=fw.controls.filter(c=>(!status||c.status===status)&&(!q||c.control_id.toLowerCase().includes(q)));
+    if(!controls.length)return '<div class="empty-state">No recorded controls match these filters.</div>';
     return '<table class="data-table"><thead><tr>' +
       '<th>Control</th><th>Status</th><th>Devices Failing</th><th>Devices Passing</th><th>Manual Review</th><th></th>' +
       '</tr></thead><tbody>' +
-      fw.controls.map((c) =>
+      controls.map((c) =>
         '<tr class="cmpl-control-row" data-control="' + escapeHtml(c.control_id) +
         '" data-framework="' + escapeHtml(fw.framework_key) + '" tabindex="0" role="button">' +
         '<td class="cell-mono">' + escapeHtml(c.control_id) + '</td>' +
@@ -90,20 +97,21 @@
     const body = document.getElementById('compliance-body');
     if (!frameworks.length) {
       body.innerHTML =
-        '<div class="empty-state"><div class="empty-state-title">No compliance results yet</div>' +
-        '<p class="empty-state-desc">Compliance controls are mapped as part of each device audit. Run an audit to populate this page.</p></div>';
+        '<div class="empty-state"><div class="empty-state-title">Not evaluated — no stored mappings</div>' +
+        '<p class="empty-state-desc">No stored framework results are available. Missing data is not a passing assessment.</p></div>';
       return;
     }
-    body.innerHTML = frameworks.map((fw, i) => {
+    body.innerHTML = frameworks.filter(fw=>!document.getElementById('framework-filter').value||fw.framework_key===document.getElementById('framework-filter').value).map((fw) => {
+      const i=frameworks.indexOf(fw);
       const isOpen = expanded.has(fw.framework_key);
       return '<div class="panel panel-wide" style="margin-bottom:16px;">' +
         '<div class="panel-body">' +
         '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px;">' +
         '<h2 style="margin:0;font-size:15px;">' + escapeHtml(fw.framework_name) + '</h2>' +
-        '<span class="cell-mono" style="font-size:18px;color:' + scoreColorVar(fw.percentage) + ';">' + fw.percentage + '%</span>' +
+        '<span class="cell-mono" style="font-size:18px;color:' + scoreColorVar(fw.percentage) + ';">' + (fw.passing_controls+fw.failing_controls?fw.percentage+'%':'No pass/fail results') + '</span>' +
         '</div>' +
         '<div class="sec-bar-track" style="margin-bottom:10px;">' +
-        '<span class="sec-bar-fill" style="width:' + Math.max(2, fw.percentage) + '%;background:' + scoreColorVar(fw.percentage) + ';"></span>' +
+        '<span class="sec-bar-fill" style="width:' + (fw.passing_controls + fw.failing_controls ? fw.percentage : 0) + '%;background:' + scoreColorVar(fw.percentage) + ';"></span>' +
         '</div>' +
         '<div class="content-sub" style="font-size:11.5px;margin-bottom:12px;">' +
         fw.total_controls + ' controls referenced · ' + fw.passing_controls + ' passing · ' +
@@ -133,7 +141,9 @@
     return cssVar(map[sev] || '--text-faint') || '#57616c';
   }
 
+  let controlRequest=0;
   async function openControl(frameworkKey, controlId) {
+    const seq=++controlRequest;
     const body = document.getElementById('control-drawer-body');
     body.innerHTML = '<div class="empty-state">Loading control detail…</div>';
     document.getElementById('control-drawer-backdrop').hidden = false;
@@ -143,6 +153,7 @@
       res = await AAAPlatform.authedFetch(
         '/api/security/compliance/' + encodeURIComponent(frameworkKey) + '/' + encodeURIComponent(controlId));
     } catch (e) { res = null; }
+    if(seq!==controlRequest)return;
     if (!res || !res.ok) {
       const b = res ? await res.json().catch(() => ({})) : {};
       body.innerHTML = '<div class="empty-state">' +
@@ -150,6 +161,7 @@
       return;
     }
     const d = await res.json();
+    if(seq!==controlRequest)return;
 
     const failing = d.findings.filter((f) => f.status === 'fail');
     const manual = d.findings.filter((f) => f.status === 'manual_review');
@@ -179,12 +191,12 @@
         ? '<div class="drawer-section-title" style="margin-top:8px;">Suggested configuration</div>' +
           '<div class="diff-view">' + escapeHtml(f.fix_command) + '</div>'
         : '') +
-      '</div>';
+      (f.device_id?'<a class="btn-secondary btn-small" href="/security/findings?device_id='+encodeURIComponent(f.device_id)+'&check_id='+encodeURIComponent(f.check_id)+'">Related observations</a>':'')+'<p class="security-note">Suggested configuration is guidance only; nothing is executed.</p></div>';
 
     body.innerHTML =
       '<div class="drawer-head">' +
       '<span class="badge sec-sev-badge" style="border-color:' + statusColor(d.status) +
-      ';color:' + statusColor(d.status) + ';">' + escapeHtml(STATUS_TEXT[d.status] || d.status) + '</span>' +
+      ';color:' + statusColor(d.status) + ';">' + escapeHtml(d.status==='na'&&!d.findings.length?'Not evaluated':STATUS_TEXT[d.status] || d.status) + '</span>' +
       '<h2 id="control-drawer-title" style="margin:8px 0 0;font-size:17px;">' +
       escapeHtml(d.control_id) + ' — ' + escapeHtml(d.control_title) + '</h2>' +
       '<div class="content-sub" style="margin-top:4px;">' + escapeHtml(d.framework_name) + '</div></div>' +
@@ -212,7 +224,7 @@
         : '');
   }
 
-  const closeControlDrawer = () => { document.getElementById('control-drawer-backdrop').hidden = true; };
+  const closeControlDrawer = () => { controlRequest++; document.getElementById('control-drawer-backdrop').hidden = true; };
   document.getElementById('control-drawer-close').addEventListener('click', closeControlDrawer);
   document.getElementById('control-drawer-backdrop').addEventListener('click', (e) => {
     if (e.target.id === 'control-drawer-backdrop') closeControlDrawer();
@@ -249,9 +261,12 @@
     }
     const data = await res.json();
     frameworks = data.frameworks;
+    document.getElementById('framework-filter').innerHTML='<option value="">All recorded frameworks</option>'+frameworks.map(f=>'<option value="'+escapeHtml(f.framework_key)+'">'+escapeHtml(f.framework_name)+'</option>').join('');
+    const key=new URLSearchParams(location.search).get('framework');if(frameworks.some(f=>f.framework_key===key)){document.getElementById('framework-filter').value=key;expanded.add(key);}else if(frameworks.length)expanded.add(frameworks[0].framework_key);
     render();
   }
 
+  ['framework-filter','control-status','control-search'].forEach(id=>document.getElementById(id).addEventListener(id==='control-search'?'input':'change',()=>{frameworks.forEach(f=>expanded.add(f.framework_key));render();}));
   load();
 })();
 </script>

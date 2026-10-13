@@ -4,21 +4,25 @@
 {% block breadcrumb %}Security Center / Audit Reports{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content security-workspace">
+  {% include "partials/security_workspace.html" %}
   <div class="content-head">
-    <h1>Audit Reports</h1>
-    <p class="content-sub">Every fleet-wide audit run — scheduled or manually triggered — grouped as one numbered report.</p>
+    <h1>Audit History & Reports</h1>
+    <p class="content-sub">Latest 20 fleet-wide reports. Web reports preserve each batch’s assessment; a single-device audit does not create a batch report.</p>
   </div>
 
   <div id="reports-table-wrap">
     <div class="empty-state">Loading…</div>
   </div>
+<div class="content-head"><h2>Recent Audit Runs</h2><p class="security-note">Latest 100 recorded runs, including standalone uploads and failed attempts. Open a saved audit for its recorded observations and timestamps.</p></div><div id="audit-activity-table">Loading audit history…</div>
 </main>
 {% endblock %}
 
 {% block view_scripts %}
 <script>
 (() => {
+  SecurityUI.mount();
+  const document=SecurityUI.scopeDocument();
   // Pre-rendered server-side via Jinja (see the top-of-file macro
   // import) since this markup is built client-side, per table row.
   const ICON_VIEW = '{{ icons.icon("eye", 14) }}';
@@ -83,6 +87,10 @@
     `;
   }
 
+  OpsUI.table('reports-table-wrap');OpsUI.table('audit-activity-table');
+  (async()=>{const body=document.getElementById('audit-activity-table');try{const rows=await OpsUI.request('/api/security/activity?limit=100');body.innerHTML=rows.length?'<table class="data-table"><thead><tr><th>Device</th><th>Started</th><th>Source</th><th>Execution</th><th>Score</th><th>Saved audit</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+escapeHtml(r.device_name)+'</td><td>'+escapeHtml(SecurityUI.dt(r.started_at))+'</td><td>'+escapeHtml(r.source)+'</td><td>'+SecurityUI.badge(r.status)+'</td><td>'+(r.overall_score??'Unavailable')+'</td><td><button class="btn-secondary btn-small" data-audit="'+escapeHtml(r.audit_run_id)+'">Open audit</button></td></tr>').join('')+'</tbody></table>':'<div class="empty-state">No recorded audits.</div>';}catch(e){body.textContent=e.message;}})();
+  document.getElementById('audit-activity-table').onclick=e=>{const b=e.target.closest('[data-audit]');if(b)SecurityUI.audit(b.dataset.audit);};
+  const auditId=new URLSearchParams(location.search).get('audit_id');if(auditId)SecurityUI.audit(auditId);
   loadReports();
 })();
 </script>

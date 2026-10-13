@@ -1,0 +1,55 @@
+/* GUI-05: scoped Security Center presentation; GUI-01 tokens remain authoritative. */
+.security-workspace {max-width:none;min-width:0}
+.security-nav {display:flex;gap:6px;flex-wrap:wrap;padding-bottom:12px;border-bottom:1px solid var(--border-default)}
+.security-nav a {padding:8px 12px;color:var(--text-secondary);font-size:13px;border-radius:var(--radius-sm)}
+.security-nav a[aria-current] {color:var(--accent-primary);background:var(--bg-selected)}
+.security-context,.security-note {color:var(--text-muted);font-size:12px;line-height:1.5;margin:12px 0 18px}
+.security-workspace .content-head {margin:20px 0 16px}
+.security-workspace .panel-grid {gap:16px;background:transparent;border:0}
+.security-workspace .sec-grid {gap:16px;min-width:0}
+.security-workspace .sec-grid-posture {grid-template-columns:240px minmax(0,1fr)}
+.security-workspace .sec-grid-charts,.security-workspace .sec-grid-trend,.security-workspace .sec-grid-risk {grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.security-workspace .sec-gauge {width:118px;height:118px}
+.security-workspace .sec-gauge-value {font-size:28px;margin-top:-73px}
+.security-workspace .sec-gauge-label {margin-top:57px}
+.security-workspace .status-card-grid {gap:10px;grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+.security-workspace .status-card {padding:14px;min-height:84px}
+.security-workspace .status-card-value {font-size:26px}
+.security-workspace .panel,.security-workspace .panel-body {min-width:0}
+.security-workspace .panel-body:has(>.data-table),.security-workspace #findings-table-wrap,.security-workspace #compliance-body {overflow-x:auto}
+.security-workspace .data-table {font-size:12px;width:100%}
+.security-workspace .data-table td,.security-workspace .data-table th {padding:11px 12px;vertical-align:top;overflow-wrap:anywhere}
+.security-workspace .data-table th {white-space:nowrap;word-break:normal}
+.security-workspace .cell-mono {word-break:normal}
+.security-workspace .cell-actions a,.security-workspace .cell-actions button {white-space:nowrap;overflow-wrap:normal}
+.security-workspace #devices-table-wrap .data-table {min-width:1100px}
+.security-workspace .sec-port {min-width:190px}
+.security-workspace .sec-port-count {font-size:11px}
+.security-workspace .toolbar {gap:12px;flex-wrap:wrap}
+.security-workspace .toolbar .field {min-width:150px!important;flex:1}
+.security-workspace .sec-risk-card {padding:12px}
+.security-actions {display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}
+.security-actions a,.security-actions button {width:auto}
+.security-coverage {display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:16px 0}
+.security-coverage>div {background:var(--bg-surface);border:1px solid var(--border-subtle);padding:14px;border-radius:var(--radius-md)}
+.security-coverage strong {display:block;font-size:24px;margin:6px 0;color:var(--text-primary)}
+.security-overlay .drawer {width:min(94vw,1100px)!important;max-width:94vw}
+.security-overlay .modal {width:min(94vw,860px);max-width:94vw;max-height:88vh;overflow:auto}
+.security-overlay .diff-view,.security-evidence {white-space:pre;font:12px/1.7 var(--font-mono);max-height:50vh;overflow:auto;background:var(--bg-input);border:1px solid var(--border-subtle);padding:14px;border-radius:var(--radius-sm)}
+.security-overlay .diff-view.is-wrapped,.security-evidence.is-wrapped {white-space:pre-wrap;overflow-wrap:anywhere}
+.security-evidence-tools {display:flex;gap:10px;align-items:center;margin:8px 0}
+.security-evidence-tools button {width:auto}
+.security-workspace #schedule-form {max-width:1000px;background:var(--bg-surface);padding:22px;border:1px solid var(--border-default);border-radius:var(--radius-md)}
+.security-workspace #schedule-form .field-row>.field {flex:1;min-width:0}
+.security-workspace #schedule-form .field-icon-wrap input {width:100%;min-width:0}
+.security-workspace #schedule-form .field-hint {margin-top:8px!important;line-height:1.5}
+.security-workspace [data-security-denied],.security-overlay [data-security-denied] {display:none!important}
+.security-audit-body {min-width:0}
+.security-audit-body details {margin:12px 0;padding:10px;border:1px solid var(--border-subtle);border-radius:var(--radius-sm)}
+.security-audit-body summary {cursor:pointer;font-weight:600}
+.security-badge {display:inline-block;padding:3px 7px;border-radius:var(--radius-sm);font-size:11px;border:1px solid var(--border-default);color:var(--text-secondary)}
+.security-badge[data-state=failed],.security-badge[data-state=fail],.security-badge[data-state=critical],.security-badge[data-state=high] {color:var(--danger);background:var(--danger-bg)}
+.security-badge[data-state=completed],.security-badge[data-state=pass] {color:var(--success);background:var(--success-bg)}
+.security-badge[data-state=partial],.security-badge[data-state=warn],.security-badge[data-state=manual_review],.security-badge[data-state=medium] {color:var(--warning);background:var(--warning-bg)}
+@media(max-width:1100px){.security-workspace .sec-grid-posture {grid-template-columns:200px minmax(0,1fr)}.security-workspace .sec-grid-risk {grid-template-columns:1fr}}
+@media(max-width:760px){.security-workspace .sec-grid {grid-template-columns:1fr}.security-workspace .field-row {flex-wrap:wrap}}

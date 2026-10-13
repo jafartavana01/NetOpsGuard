@@ -4,10 +4,11 @@
 {% block breadcrumb %}Security Center / Devices{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content security-workspace">
+  {% include "partials/security_workspace.html" %}
   <div class="content-head">
     <h1>Device Security</h1>
-    <p class="content-sub">Every NetOpsGuard device with its most recent audit score. Select devices to run an audit across them as one job.</p>
+    <p class="content-sub">All inventory devices and their latest completed assessment. A later failed attempt does not replace these results. Select devices to run an audit using the saved service account.</p>
   </div>
 
   <div class="status-card-grid" id="device-summary" style="margin-bottom:16px;"></div>
@@ -63,6 +64,7 @@
     </div>
   </div>
 
+  <div class="security-actions"><label>Sort <select id="device-sort"><option value="name">Name</option><option value="score">Lowest score first</option><option value="oldest">Oldest completed audit first</option></select></label></div>
   <div id="devices-table-wrap">
     <div class="empty-state">Loading…</div>
   </div>
@@ -72,6 +74,8 @@
 {% block view_scripts %}
 <script>
 (() => {
+  SecurityUI.mount();
+  const document=SecurityUI.scopeDocument();
   // Pre-rendered server-side via Jinja (see the top-of-file macro
   // import) since this markup is built client-side, per table row.
   const ICON_VIEW = '{{ icons.icon("eye", 14) }}';
@@ -107,7 +111,9 @@
   // against that function, not assumed to be the usual three.
   const HIGH_RISK = ['Critical', 'Severe', 'High'];
 
-  let devices = [];
+  let devices = [], findings=null;
+  OpsUI.table('devices-table-wrap',{search:false});
+  document.getElementById('device-sort').onchange=()=>renderTable();
   const selected = new Set();
 
   function riskColor(risk) {
@@ -124,12 +130,11 @@
   }
 
   function renderSummary() {
-    const audited = devices.filter((d) => d.latest_score != null);
+    const audited = devices.filter((d) => d.latest_audit_run_id);
     const atRisk = audited.filter((d) => HIGH_RISK.includes(d.latest_risk_level)).length;
-    const healthy = audited.length - atRisk;
     document.getElementById('device-summary').innerHTML = [
       kpiCard(ICON_SERVER, 'Total Devices', devices.length, ''),
-      kpiCard(ICON_CHECK, 'Healthy', healthy, 'is-signal'),
+      kpiCard(ICON_CHECK, 'Completed assessment', audited.length, ''),
       kpiCard(ICON_ALERT, 'At Risk', atRisk, 'is-red'),
       kpiCard(ICON_CLOCK, 'Not Audited', devices.length - audited.length, ''),
     ].join('');
@@ -144,8 +149,8 @@
     return devices.filter((d) => {
       if (search && !(d.name.toLowerCase().includes(search) || d.ip_address.toLowerCase().includes(search))) return false;
       if (group && (d.device_group_name || '') !== group) return false;
-      if (status === 'audited' && d.latest_score == null) return false;
-      if (status === 'not_audited' && d.latest_score != null) return false;
+      if (status === 'audited' && !d.latest_audit_run_id) return false;
+      if (status === 'not_audited' && !!d.latest_audit_run_id) return false;
       if (risk && (d.latest_risk_level || '').toLowerCase() !== risk) return false;
       return true;
     });
@@ -160,7 +165,7 @@
 
   function renderTable() {
     const wrap = document.getElementById('devices-table-wrap');
-    const rows = visibleDevices();
+    const rows = visibleDevices();const sort=document.getElementById('device-sort').value;rows.sort((a,b)=>sort==='score'?(a.latest_score??Infinity)-(b.latest_score??Infinity):sort==='oldest'?(a.latest_audited_at?Date.parse(a.latest_audited_at):0)-(b.latest_audited_at?Date.parse(b.latest_audited_at):0):a.name.localeCompare(b.name));
     if (!rows.length) {
       wrap.innerHTML = devices.length
         ? '<div class="empty-state">No devices match these filters.</div>'
@@ -172,12 +177,12 @@
     wrap.innerHTML =
       '<table class="data-table"><thead><tr>' +
       '<th style="width:34px;"><span class="checkbox-field"><input type="checkbox" id="select-all-visible" ' +
-      (allShownSelected ? 'checked' : '') + ' aria-label="Select all visible devices"></span></th>' +
-      '<th>Device</th><th>IP Address</th><th>Group</th><th>Status</th><th>Score</th><th>Last Audited</th><th></th>' +
+      (allShownSelected ? 'checked' : '') + ' aria-label="Select all filtered devices (including other pages)"></span></th>' +
+      '<th>Device</th><th>IP Address</th><th>Group</th><th>Recorded risk</th><th>Critical / high failures</th><th>Score</th><th>Last Audited</th><th></th>' +
       '</tr></thead><tbody>' +
       rows.map((d) => {
-        const audited = d.latest_score != null;
-        const statusLabel = audited ? (HIGH_RISK.includes(d.latest_risk_level) ? 'At Risk' : 'Healthy') : 'Not Audited';
+        const audited = !!d.latest_audit_run_id;
+        const statusLabel = audited ? (d.latest_risk_level || 'Risk unavailable') : 'Awaiting completed audit';
         const statusCol = audited ? riskColor(d.latest_risk_level) : (cssVar('--text-faint') || '#57616c');
         return '<tr>' +
           '<td><span class="checkbox-field"><input type="checkbox" class="device-select" data-device-id="' + d.id + '" ' +
@@ -187,8 +192,8 @@
           '<td class="cell-mono">' + escapeHtml(d.ip_address) + '</td>' +
           '<td class="content-sub">' + escapeHtml(d.device_group_name || '—') + '</td>' +
           '<td><span class="badge sec-sev-badge" style="border-color:' + statusCol + ';color:' + statusCol + ';">' +
-          statusLabel + '</span></td>' +
-          '<td>' + (audited
+          escapeHtml(statusLabel) + '</span></td><td class="cell-mono">'+(!d.latest_audit_run_id?'—':findings===null?'Unavailable':findings.filter(f=>f.device_id===d.id&&f.status==='fail'&&f.severity==='critical').length+' / '+findings.filter(f=>f.device_id===d.id&&f.status==='fail'&&f.severity==='high').length)+'</td>' +
+          '<td>' + (d.latest_score!=null
             ? '<span class="sec-inline-bar"><span class="sec-inline-bar-fill" style="width:' + Math.max(2, d.latest_score) +
               '%;background:' + scoreColorVar(d.latest_score) + ';"></span></span>' +
               '<span class="cell-mono" style="margin-left:6px;">' + d.latest_score + '</span>'
@@ -235,7 +240,8 @@
   document.getElementById('bulk-audit-btn').addEventListener('click', async () => {
     const btn = document.getElementById('bulk-audit-btn');
     const ids = [...selected];
-    if (!ids.length) return;
+    if (!ids.length||!SecurityUI.can('security:audit')) return;
+    if(!window.confirm('Audit '+ids.length+' selected devices using the saved service account?'))return;
 
     btn.disabled = true;
     const original = btn.innerHTML;
@@ -263,7 +269,7 @@
     const result = await res.json();
     AAAPlatform.toast(
       'Audit #' + result.batch_display_number + ' finished — ' +
-      result.succeeded + '/' + result.total_devices + ' devices audited.');
+      result.succeeded + '/' + result.total_devices + ' devices audited · '+result.status, result.status==='completed'?'success':'error');
     selected.clear();
     load();
   });
@@ -283,6 +289,7 @@
       return;
     }
     devices = await res.json();
+    try{findings=await OpsUI.request('/api/security/findings');}catch{findings=null;}
 
     const groupSelect = document.getElementById('filter-group');
     const chosen = groupSelect.value;

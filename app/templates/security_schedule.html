@@ -4,18 +4,20 @@
 {% block breadcrumb %}Security Center / Scheduled Audits{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content security-workspace">
+  {% include "partials/security_workspace.html" %}
   <div class="content-head">
-    <h1>Scheduled Audits</h1>
+    <h1>Scheduled Security Audits</h1>
     <p class="content-sub">A platform-owned SSH account NetOpsGuard uses to audit every enabled device on its own, once a day, without a human logging in each time.</p>
   </div>
 
   <div class="panel panel-wide" style="margin-bottom:20px;border-color:var(--amber);">
     <div class="panel-body" style="font-size:12px;color:var(--amber);">
-      ⚠ This account can reach every enabled device unattended — treat its password with the same care as a device's own TACACS+ shared secret. It is never displayed once saved. Restrict where it can actually be used to sign in by allow-listing this platform's own management IP on each device's own SSH access-list — NetOpsGuard has no way to configure that restriction on a device itself, so it's on you to set it up there; use the field below to note that IP for your own reference.
+      Shared SSH service account for all enabled inventory devices. The saved password is never displayed. Device-side SSH access restrictions must be managed on the devices.
     </div>
   </div>
 
+  <p class="security-note">One daily fleet schedule · Targets: all enabled devices · Time zone: UTC. No per-group schedules or next-run estimate are available.</p>
   <form id="schedule-form">
     <label class="toggle-field field" style="margin-bottom:16px;">
       <span class="toggle-switch">
@@ -45,7 +47,7 @@
 
     <div class="field-row">
       <label class="field">
-        <span class="field-label">Daily run time (server local time)</span>
+        <span class="field-label">Daily run time (UTC)</span>
         <div class="field-icon-wrap">
           <span class="field-icon">{{ icons.icon('history', 14) }}</span>
           <input type="time" id="schedule-run-time" required>
@@ -64,8 +66,9 @@
     <div id="schedule-form-error" class="form-error" role="alert" hidden></div>
 
     <div style="display:flex;gap:10px;margin-top:8px;">
-      <button type="submit" class="btn-primary btn-with-icon" style="width:auto;">{{ icons.icon('check', 16) }}Save Settings</button>
-      <button type="button" class="btn-secondary btn-with-icon" id="schedule-run-now-btn" style="width:auto;">{{ icons.icon('activity', 16) }}Run Now</button>
+      <button id="schedule-save" disabled type="submit" class="btn-primary btn-with-icon" style="width:auto;">{{ icons.icon('check', 16) }}Save Settings</button>
+      <button type="button" class="btn-secondary btn-with-icon" id="schedule-run-now-btn" disabled style="width:auto;">{{ icons.icon('activity', 16) }}Run Now</button>
+      <button type="button" id="schedule-cancel" class="btn-ghost">Discard edits</button>
     </div>
   </form>
 
@@ -83,113 +86,24 @@
 {% block view_scripts %}
 <script>
 (() => {
-  function escapeHtml(s) {
-    // Escapes quotes as well as angle brackets, so the result is safe
-    // inside an HTML ATTRIBUTE and not only in text position. The
-    // previous textContent/innerHTML round-trip left quotes intact,
-    // which let a value like `" onerror="alert(1)` close an attribute
-    // and add a new one.
-    return String(s == null ? '' : s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-
-  function renderReadout(label, value) {
-    return `<div class="readout"><span class="readout-k">${label}</span><span class="readout-v">${value}</span></div>`;
-  }
-
-  function renderLastRun(s) {
-    const body = document.getElementById('schedule-last-run-body');
-    if (!s.last_run_at) {
-      body.innerHTML = '<div class="empty-state">No scheduled or manual run has completed yet.</div>';
-      return;
-    }
-    const statusColor = s.last_run_status === 'completed' ? 'var(--signal)' : (s.last_run_status === 'partial' ? 'var(--amber)' : 'var(--red)');
-    body.innerHTML = `
-      ${renderReadout('last run', new Date(s.last_run_at).toLocaleString())}
-      ${renderReadout('status', `<span style="color:${statusColor};">${escapeHtml(s.last_run_status || 'unknown')}</span>`)}
-      <div style="margin-top:10px;white-space:pre-wrap;font-size:12.5px;color:var(--text-dim);">${escapeHtml(s.last_run_summary || '')}</div>
-    `;
-  }
-
-  function applySettings(s) {
-    document.getElementById('schedule-enabled').checked = s.enabled;
-    document.getElementById('schedule-ssh-username').value = s.ssh_username;
-    document.getElementById('schedule-run-time').value = s.daily_run_time;
-    document.getElementById('schedule-ip-note').value = s.management_ip_note || '';
-    document.getElementById('schedule-password-badge').hidden = !s.has_password;
-    if (s.has_password) document.getElementById('schedule-password-badge').textContent = 'configured';
-    document.getElementById('schedule-password-hint').textContent = s.has_password
-      ? 'A password is already saved. Leave blank to keep it.'
-      : 'No password saved yet.';
-    renderLastRun(s);
-  }
-
-  async function loadSettings() {
-    let res;
-    try {
-      res = await AAAPlatform.authedFetch('/api/security/schedule');
-    } catch (err) {
-      res = null;
-    }
-    if (!res || !res.ok) {
-      document.getElementById('schedule-last-run-body').innerHTML =
-        `<div class="empty-state">${res && res.status === 403 ? "Your role doesn't have permission to view this page." : 'Could not load settings.'}</div>`;
-      return;
-    }
-    applySettings(await res.json());
-  }
-
-  document.getElementById('schedule-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const errorBox = document.getElementById('schedule-form-error');
-    errorBox.hidden = true;
-
-    const payload = {
-      enabled: document.getElementById('schedule-enabled').checked,
-      ssh_username: document.getElementById('schedule-ssh-username').value,
-      daily_run_time: document.getElementById('schedule-run-time').value,
-      management_ip_note: document.getElementById('schedule-ip-note').value || null,
-    };
-    const password = document.getElementById('schedule-ssh-password').value;
-    if (password) payload.ssh_password = password;
-
-    const res = await AAAPlatform.authedFetch('/api/security/schedule', {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      errorBox.textContent = (body.detail && typeof body.detail === 'string') ? body.detail : 'Could not save settings.';
-      errorBox.hidden = false;
-      return;
-    }
-    document.getElementById('schedule-ssh-password').value = '';
-    applySettings(await res.json());
-    AAAPlatform.toast('Schedule settings saved.');
-  });
-
-  document.getElementById('schedule-run-now-btn').addEventListener('click', async () => {
-    const errorBox = document.getElementById('schedule-form-error');
-    errorBox.hidden = true;
-    const btn = document.getElementById('schedule-run-now-btn');
-    btn.disabled = true;
-    const res = await AAAPlatform.authedFetch('/api/security/schedule/run-now', { method: 'POST' });
-    btn.disabled = false;
-
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      errorBox.textContent = (body.detail && typeof body.detail === 'string') ? body.detail : 'Run failed.';
-      errorBox.hidden = false;
-      return;
-    }
-    applySettings(await res.json());
-    AAAPlatform.toast('Audit run complete — see Last Run below.');
-  });
-
-  loadSettings();
+  SecurityUI.mount();const document=SecurityUI.scopeDocument();const $=id=>document.getElementById(id);
+  let saved=null,busy=false,dirty=false;
+  function state(){ document.querySelectorAll('#schedule-form input').forEach(input=>input.disabled=busy||!saved); $('schedule-save').disabled=busy||!saved;$('schedule-run-now-btn').disabled=busy||!saved||!saved.has_password;$('schedule-cancel').disabled=busy||!saved;}
+  function error(message){$('schedule-form-error').textContent=message;$('schedule-form-error').hidden=false;}
+  function apply(s){saved=s;dirty=false;$('schedule-enabled').checked=s.enabled;$('schedule-ssh-username').value=s.ssh_username;$('schedule-run-time').value=s.daily_run_time;$('schedule-ip-note').value=s.management_ip_note||'';$('schedule-ssh-password').value='';$('schedule-password-badge').hidden=!s.has_password;$('schedule-password-badge').textContent='configured';$('schedule-password-hint').textContent=s.has_password?'Leave blank to keep the saved password.':'No password saved.';$('schedule-last-run-body').innerHTML=s.last_run_at?'<p>'+SecurityUI.badge(s.last_run_status)+' · '+SecurityUI.dt(s.last_run_at)+'</p><pre class="security-evidence">'+AAAPlatform.escapeHtml(s.last_run_summary||'No summary recorded.')+'</pre>':'No scheduled or manual fleet run recorded.';state();}
+  $('schedule-form').addEventListener('input',()=>dirty=true);$('schedule-form').addEventListener('change',()=>dirty=true);
+  $('schedule-cancel').onclick=()=>{if(saved&&(!dirty||window.confirm('Discard unsaved schedule changes?'))){apply(saved);$('schedule-form-error').hidden=true;}};
+  $('schedule-form').onsubmit=async e=>{e.preventDefault();if(busy||!saved)return;$('schedule-form-error').hidden=true;
+    const username=$('schedule-ssh-username').value.trim(),time=$('schedule-run-time').value,password=$('schedule-ssh-password').value;
+    if(!username||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)){error('Enter an SSH username and a valid UTC time.');return;}
+    if($('schedule-enabled').checked&&!saved.has_password&&!password){error('Set a password before enabling unattended audits.');return;}
+    const payload={enabled:$('schedule-enabled').checked,ssh_username:username,daily_run_time:time,management_ip_note:$('schedule-ip-note').value||null};if(password)payload.ssh_password=password;
+    busy=true;state();try{const res=await SecurityUI.safeFetch('/api/security/schedule',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const data=await res.json();if(!res.ok){error(typeof data.detail==='string'?data.detail:'Could not save settings.');return;}apply(data);AAAPlatform.toast('Schedule saved.');}catch{error('Invalid response. Refresh settings before retrying.');}finally{busy=false;state();}
+  };
+  $('schedule-run-now-btn').onclick=async()=>{if(busy||!saved)return;if(dirty){error('Save or discard your edits before running the saved schedule.');return;}if(!window.confirm('Audit all enabled devices with the saved service account?'))return;
+    busy=true;state();$('schedule-run-now-btn').textContent='Request in progress…';try{const res=await SecurityUI.safeFetch('/api/security/schedule/run-now',{method:'POST'});const data=await res.json();if(!res.ok){error(typeof data.detail==='string'?data.detail:'Audit request failed.');return;}apply(data);AAAPlatform.toast('Audit result: '+data.last_run_status,data.last_run_status==='completed'?'success':'error');}catch{error('Result unavailable. Refresh audit history before retrying.');}finally{busy=false;state();$('schedule-run-now-btn').textContent='Run Now';}
+  };
+  (async()=>{try{apply(await OpsUI.request('/api/security/schedule'));}catch(e){error(e.message);$('schedule-last-run-body').textContent='Schedule result unavailable.';state();}})();
 })();
 </script>
 {% endblock %}
