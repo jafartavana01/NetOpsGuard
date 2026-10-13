@@ -1,8 +1,17 @@
-# Licensing
+---
+layout: default
+title: "NetOpsGuard Pricing and Licensing — Free, Starter and Enterprise"
+description: "Compare NetOpsGuard annual licence prices: free for 5 devices, Starter $99/year for 15, Professional $299/year for 50, and Business $599/year for 100."
+permalink: /licensing/
+---
 
-The Community edition supports up to five devices. Signed licences increase the device limit; the installed entitlement display is authoritative for the imported licence. Licensing does not turn planned functionality into supported functionality.
+# NetOpsGuard licensing and licence requests
 
-## Introductory annual licence prices
+NetOpsGuard is a self-hosted network AAA and security operations platform. The **Community edition is free for up to five managed devices** and includes the currently available platform features. Teams managing larger networks can request **signed licences** with increased device limits.
+
+The project's source code is licensed separately under [Apache License 2.0](https://github.com/jafartavana01/NetOpsGuard/blob/main/LICENSE). A signed runtime licence determines the installation's device entitlement.
+
+## Introductory NetOpsGuard annual pricing
 
 | Edition | Managed devices | Introductory annual licence |
 | --- | ---: | ---: |
@@ -13,29 +22,36 @@ The Community edition supports up to five devices. Signed licences increase the 
 | Enterprise | Up to 300 | **US$1,299/year** |
 | Unlimited | No fixed device limit | **Contact for a quote** |
 
-Prices are **proposed introductory rates in US dollars**, quoted by the maintainer and subject to confirmation before purchase. All listed editions include the currently available platform feature set; licences primarily adjust the permitted number of devices. These figures do not imply an automatic online checkout, a particular service-level agreement, or tested production compatibility with all device types. The active imported entitlement displayed by the platform remains authoritative.
+All editions include the currently available features. Prices are proposed introductory rates in **US dollars**, subject to confirmation when requesting a signed licence. Contact the maintainer for availability and terms. These prices do not include any promised SLA or paid implementation services.
 
-See [Pricing and product comparison](pricing.md) for a comparison with ManageEngine's separate NCM product and the source of the published competitor prices.
+**Interested in a comparison?** The [pricing comparison]({{ '/pricing/' | relative_url }}) includes ManageEngine Network Configuration Manager's published annual subscription rates and important differences in product scope and support.
 
-## Requesting a licence
+## Contact the maintainer to request a licence
 
-Contact the NetOpsGuard maintainer to request a signed licence for a higher device limit, ask about licence availability, or discuss migration to another server:
+To ask about expanded device limits, licence issuance, or licence migration, use any of these contact methods:
 
 - **Email:** [tavanajafar2@gmail.com](mailto:tavanajafar2@gmail.com)
 - **Telegram:** [@Powerinfossl](https://t.me/Powerinfossl)
 - **WhatsApp ID:** `@jafartavana0`
 - **Phone:** [+98 917 011 8221](tel:+989170118221) (`00989170118221`)
 
-Tell us the number of devices you need to manage and, if applicable, which existing installation you want to migrate. For a machine-bound licence, generate the licence request file first and share it only through an agreed private contact channel. **Never send passwords, database credentials, private keys, or unredacted device configurations.**
+When contacting the maintainer, mention **NetOpsGuard**, your requested device count, and whether you need a new licence or a migration. You can also describe your deployment environment without revealing sensitive infrastructure information.
 
-See the [public licensing information page](licensing.md) for a short overview of the process.
+## Generate a licence request
 
-## Installing a signed licence
+For a machine-bound licence, use the application's **Platform → License** page to generate a licence request. An alternative, on the NetOpsGuard server, is:
 
-Import licences through the platform's License page. For a machine-bound licence, generate a licence request from that page or run `sudo python3 collect_fingerprint.py` on the target host and provide the resulting request to the issuer through an agreed private channel. Do not send database credentials or encryption keys.
+```bash
+sudo python3 collect_fingerprint.py
+```
 
-Licences contain a signed payload and an Ed25519 signature. The application ships the issuer's public verification key; the issuer's private signing key must remain outside the repository and release package. Synthetic development signing material in automated tests is not trusted by the production verifier.
+Share the generated request through an agreed **private channel**. Do not publish licence requests, private keys, passwords, database credentials, or live network device configurations in public GitHub issues.
 
-A database backup does not replace a valid licence or a matching machine identity. Review licence status after moving an installation or changing hardware. Contact the maintainer for licence issuance and migration questions.
+After obtaining a signed licence, import it through the **License** page and check that the displayed device limit and entitlement match your request.
 
-The source-code licence is [Apache License 2.0](../LICENSE). It is separate from signed runtime entitlements.
+## More information
+
+- [Read the complete licensing guide](https://github.com/jafartavana01/NetOpsGuard/blob/main/docs/LICENSING.md)
+- [NetOpsGuard source repository](https://github.com/jafartavana01/NetOpsGuard)
+- [Installation instructions]({{ '/guides/getting-started/' | relative_url }})
+- [Frequently asked questions]({{ '/faq/' | relative_url }})
