@@ -1,0 +1,58 @@
+name: "Bug report"
+description: "Report a reproducible NetOpsGuard issue without sharing secrets."
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: "Please remove credentials, device shared secrets, private configurations, access tokens, and personal data before submitting. Security vulnerabilities belong in the private channel described in SECURITY.md."
+  - type: input
+    id: version
+    attributes:
+      label: "NetOpsGuard version or commit"
+      placeholder: "Release name or commit SHA"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: "Environment"
+      description: "Ubuntu version, browser (if relevant), and a sanitized device/daemon type."
+      placeholder: "Ubuntu 24.04 LTS, Cisco IOS-XE lab device"
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: "Affected area"
+      options:
+        - "Installation / upgrade"
+        - "TACACS+ / command authorization"
+        - "Active Directory / LDAP"
+        - "RADIUS"
+        - "NCM / backups / schedules"
+        - "Security Center"
+        - "Network Operations"
+        - "Web UI"
+        - "Other"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: "Steps to reproduce"
+      description: "Use anonymized lab inputs where possible."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: "Expected behavior"
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: "Actual behavior and sanitized diagnostic output"
+    validations:
+      required: true

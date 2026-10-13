@@ -111,6 +111,9 @@ The management port and certain service settings are configurable. Open only the
 | [Changelog](CHANGELOG.md) | User-visible changes in the current published source |
 | [Security reporting](SECURITY.md) | Private vulnerability reporting and deployment responsibilities |
 | [Contributor testing](docs/TESTING.md) | Optional test instructions for contributors |
+| [FAQ](docs/faq.md) | Frequently asked questions about features, licensing and deployments |
+| [Support](SUPPORT.md) | How to request help and report bugs |
+| [Contributing](CONTRIBUTING.md) | Contribution guidelines and validation expectations |
 
 ## Licensing
 

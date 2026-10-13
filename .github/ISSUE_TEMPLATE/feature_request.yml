@@ -1,0 +1,24 @@
+name: "Feature request"
+description: "Suggest a workflow improvement for NetOpsGuard."
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Problem to solve"
+      description: "Describe the operator or security workflow and why the existing behavior is insufficient."
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: "Proposed behavior"
+      description: "Explain what the administrator would see or do. No private infrastructure information."
+    validations:
+      required: true
+  - type: textarea
+    id: considerations
+    attributes:
+      label: "Device compatibility, safety, or alternatives"
+      description: "Mention relevant protocol/device requirements or existing alternatives."

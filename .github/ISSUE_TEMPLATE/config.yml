@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: "Read support and troubleshooting guidance"
+    url: "https://github.com/jafartavana01/NetOpsGuard/blob/main/SUPPORT.md"
+    about: "Check known installation, connectivity, and configuration guidance before opening an issue."
+  - name: "Report a security vulnerability privately"
+    url: "https://github.com/jafartavana01/NetOpsGuard/blob/main/SECURITY.md"
+    about: "Do not disclose potential vulnerabilities or credentials in public issues."
