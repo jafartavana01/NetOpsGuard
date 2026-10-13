@@ -90,3 +90,23 @@ button[aria-busy=true] { cursor:progress; }
 @keyframes gui-pulse { to { opacity:.45; } }
 @media(max-width:960px) { .data-table { min-width:620px; } [id$="-table-wrap"] { overflow-x:auto; } }
 @media(max-width:640px) { .gui-dialog-backdrop { padding:12px; } .gui-drawer-backdrop { padding:0; } .gui-drawer { width:100vw; } .gui-dialog-header,.gui-dialog-body { padding:16px; } }
+
+/* Shared small-screen and technical-data polish; retain existing tokens. */
+.table-scroll { max-width:100%; overflow:auto; }
+.table-scroll:focus-visible { outline:2px solid var(--accent-primary); outline-offset:2px; }
+.content-sub,.field-hint,.form-error,.gui-dialog-body { overflow-wrap:anywhere; }
+.gui-dialog-header h2 { min-width:0; overflow-wrap:anywhere; }
+.gui-dialog-header .shell-icon-button { flex-shrink:0; }
+#notification-stack { position:fixed; bottom:24px; right:24px; z-index:12000; display:flex; flex-direction:column; gap:8px; max-width:min(420px,calc(100vw - 32px)); max-height:50dvh; overflow:auto; }
+#notification-stack .toast { position:static; display:flex; align-items:flex-start; gap:12px; max-width:100%; overflow-wrap:anywhere; }
+#notification-stack .toast span { flex:1; min-width:0; }
+#notification-stack .toast button { flex-shrink:0; color:inherit; }
+@media(max-width:640px) {
+ .toolbar,.table-pagination,.gui-dialog-footer { flex-wrap:wrap; }
+ .toolbar > .field { min-width:0!important; width:100%; }
+ .field-row { flex-wrap:wrap; }
+ .field-row > .field { min-width:0; flex-basis:100%; }
+ .modal { max-width:calc(100vw - 24px); max-height:calc(100dvh - 24px); overflow:auto; }
+ .modal-actions { flex-wrap:wrap; }
+ #notification-stack { bottom:16px; right:16px; }
+}

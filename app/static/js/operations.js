@@ -52,16 +52,20 @@
   function table(id,{search=true,pageSize=25}={}) {
     const wrap=$(id);if(!wrap)return;
     wrap.classList.add('ops-table');
+    wrap.tabIndex=0;wrap.setAttribute('role','region');
+    if(!wrap.hasAttribute('aria-label'))wrap.setAttribute('aria-label','Scrollable results table');
     function attach(){
       const t=wrap.querySelector('table');if(!t||t.dataset.opsTable)return;
       t.dataset.opsTable='true';
       wrap.querySelector('.ops-table-tools')?.remove();
+      wrap.querySelector('.ops-table-empty')?.remove();
       const rows=[...t.tBodies[0].rows];let page=0;
       const bar=document.createElement('div');bar.className='ops-table-tools';
       bar.innerHTML=(search?'<input type="search" aria-label="Filter loaded rows" placeholder="Filter loaded rows…">':'')+'<span aria-live="polite"></span><button type="button" class="btn-secondary btn-small">Previous</button><button type="button" class="btn-secondary btn-small">Next</button>';
       wrap.insertBefore(bar,t);
+      const empty=document.createElement('p');empty.className='empty-state ops-table-empty';empty.textContent='No loaded rows match this filter.';empty.hidden=true;t.after(empty);
       const input=bar.querySelector('input'),info=bar.querySelector('span'),[prev,next]=bar.querySelectorAll('button');
-      function render(){const q=input?.value.toLowerCase()||'';const list=rows.filter(r=>r.textContent.toLowerCase().includes(q));page=Math.min(page,Math.max(0,Math.ceil(list.length/pageSize)-1));rows.forEach(r=>r.hidden=true);list.slice(page*pageSize,(page+1)*pageSize).forEach(r=>r.hidden=false);info.textContent=`${list.length? page*pageSize+1:0}–${Math.min((page+1)*pageSize,list.length)} of ${list.length} loaded rows`;prev.disabled=page===0;next.disabled=(page+1)*pageSize>=list.length;}
+      function render(){const q=input?.value.trim().toLowerCase()||'';const list=rows.filter(r=>r.textContent.toLowerCase().includes(q));page=Math.min(page,Math.max(0,Math.ceil(list.length/pageSize)-1));rows.forEach(r=>r.hidden=true);list.slice(page*pageSize,(page+1)*pageSize).forEach(r=>r.hidden=false);info.textContent=`${list.length? page*pageSize+1:0}–${Math.min((page+1)*pageSize,list.length)} of ${list.length} loaded rows`;prev.disabled=page===0;next.disabled=(page+1)*pageSize>=list.length;empty.hidden=list.length>0;}
       input?.addEventListener('input',()=>{page=0;render();});prev.onclick=()=>{page--;render();};next.onclick=()=>{page++;render();};render();
     }
     attach();const observer=new MutationObserver(attach);observer.observe(wrap,{childList:true});

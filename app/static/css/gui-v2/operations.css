@@ -76,3 +76,5 @@
 @media(min-width:1920px){.ops-master-detail {grid-template-columns:320px minmax(0,1fr)}}
 @media(max-width:1100px){.ops-grid {grid-template-columns:1fr}.ops-master-detail {grid-template-columns:220px minmax(0,1fr)}}
 @media(max-width:760px){.ops-master-detail,.ops-workspace .cmp-layout {grid-template-columns:1fr}.ops-explorer {position:static}.ops-explorer-list {max-height:220px}.ops-workspace .cdiff-panes {grid-template-columns:1fr}}
+
+@media(max-width:760px){.ops-workspace .sec-grid-risk {grid-template-columns:minmax(0,1fr)}.ops-workspace #ncm-kpis {grid-template-columns:repeat(2,minmax(0,1fr))}}

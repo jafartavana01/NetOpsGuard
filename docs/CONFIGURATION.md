@@ -4,6 +4,14 @@
 
 Use the administrator account chosen at installation. Configure HTTPS in Platform Settings and restrict management connectivity. An account without a granular role retains broad legacy administrator permissions; assign a role to restrict it. Keep at least one recoverable superadmin account.
 
+## Navigation and editing
+
+On narrow screens, open the navigation menu from the top bar; Escape closes it and returns focus to the menu button. Wide result tables scroll independently so addresses, commands, and scope values remain readable. Table filters marked “loaded rows” search the current loaded results, not additional server records.
+
+When a dialog has unsaved edits, cancellation offers a choice to keep editing or discard. Escape on the discard prompt keeps the editor open. Error notifications stay visible until dismissed. A failed sign-out request does not confirm that the session has ended; retry after connectivity is restored.
+
+RADIUS policy editing requires the group, device, device-group, and attribute lists to load. If these requests fail or access is denied, refresh after resolving the error. A saved value missing from a current list is shown explicitly and retained; it is not changed to “Any.” Review stale references before saving, then review Configuration and Apply separately. A successful save is not confirmation of deployment. If the connection is lost during Apply, the result is unknown: refresh Configuration and inspect service status before retrying.
+
 ## System & Administration workspace
 
 Use the contextual navigation to switch between Network & TLS, Administrators, Roles & permissions, AD / LDAP, Modules, License, RADIUS settings, Diagnostics, and AAA health. Existing account permissions and module availability still apply.

@@ -1,6 +1,17 @@
 # Changelog
 
-## Unreleased — System & Administration workspace
+## Unreleased — Interface consistency and usability
+
+- Rapid navigation keeps the latest selected page, follows server redirects, and focuses the new heading for keyboard users.
+- Dialog cancellation consistently protects unsaved edits; Escape on the discard prompt keeps the form open. Existing feature-specific save and permission checks remain authoritative.
+- Interrupted configuration Apply requests explicitly report an unknown outcome and require a fresh review before retrying.
+- Notifications stack without overlapping, expose accessible status messages, and allow dismissal. Failed sign-out requests remain visible instead of appearing to succeed.
+- Improved small-screen forms, NCM overview panels, scrollable technical tables, filter-empty pagination, and keyboard sorting indicators.
+- RADIUS policy editing waits for required scope options. Saved scope and attribute values absent from current lists are retained; failed saves remain in the editor with an error.
+
+This update does not change AAA authorization, policy compilation, database models, licensing enforcement, or API contracts. The known backup-scheduling, audit-comparison, LDAP certificate-verification, and role-deletion fallback issues remain unresolved.
+
+## System & Administration workspace
 
 - Consistent administration navigation, searchable account/role tables, accessible dialogs, and unsaved-change protection.
 - Clear separation between saved settings, management-service restart, AAA Configuration Apply, and observed runtime status.

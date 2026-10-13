@@ -46,8 +46,8 @@
     if (e.key === 'Tab') {
       const items = [...current.panel.querySelectorAll(focusables)].filter(el => el.getClientRects().length);
       const first = items[0] || current.panel; const last = items.at(-1) || first;
-      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      if (e.shiftKey && (document.activeElement === first || !current.panel.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && (document.activeElement === last || !current.panel.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
     }
   }, true);
   function chartOptions() {

@@ -37,12 +37,12 @@
   </div>
 
   <div id="attr-note" class="content-sub" style="margin-bottom:10px;"></div>
-  <div id="attr-wrap"><div class="empty-state">Loading…</div></div>
+  <div id="attr-wrap" class="table-scroll" role="region" aria-label="RADIUS attributes" tabindex="0"><div class="empty-state">Loading…</div></div>
   <div class="toolbar" style="margin-top:12px;">
     <span class="content-sub" id="attr-page-info"></span>
     <div style="display:flex;gap:8px;">
-      <button type="button" class="btn-ghost btn-small" id="attr-prev">Previous</button>
-      <button type="button" class="btn-ghost btn-small" id="attr-next">Next</button>
+      <button type="button" class="btn-ghost btn-small" id="attr-prev" disabled>Previous</button>
+      <button type="button" class="btn-ghost btn-small" id="attr-next" disabled>Next</button>
     </div>
   </div>
 </main>
@@ -51,6 +51,7 @@
 {% block view_scripts %}
 <script>
 (() => {
+  const document = SecurityUI.scopeDocument();
   const ICON_LIST = '{{ icons.icon("clipboard-list", 16) }}';
   const ICON_SERVER = '{{ icons.icon("server", 16) }}';
   const ICON_CHECK = '{{ icons.icon("check", 16) }}';
@@ -80,12 +81,14 @@
     const slice = rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
     const wrap = document.getElementById('attr-wrap');
 
+    document.getElementById('attr-prev').disabled = page === 0;
+    document.getElementById('attr-next').disabled = page >= maxPage;
     if (!rows.length) {
       wrap.innerHTML = attributes.length
         ? '<div class="empty-state">No attributes match these filters.</div>'
         : '<div class="empty-state"><div class="empty-state-title">No dictionary available</div>' +
           '<p class="empty-state-desc">See the note above. No attribute list is shown rather than an invented one.</p></div>';
-      document.getElementById('attr-page-info').textContent = '';
+      document.getElementById('attr-page-info').textContent = '0 matching attributes';
       return;
     }
 
@@ -125,7 +128,7 @@
     try { res = await AAAPlatform.authedFetch('/api/radius/attributes'); } catch (e) { res = null; }
     if (!res || !res.ok) {
       document.getElementById('attr-wrap').innerHTML =
-        '<div class="empty-state">Could not load the RADIUS attribute dictionary.</div>';
+        '<div class="empty-state" role="alert">' + (res?.status === 403 ? 'Access denied. Your account cannot view the RADIUS attribute dictionary.' : 'Could not load the RADIUS attribute dictionary. Refresh to retry.') + '</div>';
       return;
     }
     const data = await res.json();

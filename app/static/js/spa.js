@@ -38,7 +38,8 @@
     if (!a || a.target === '_blank' || a.hasAttribute('download') || a.dataset.noSpa !== undefined) return false;
     const href = a.getAttribute('href');
     if (!href || href.startsWith('#') || href.startsWith('http:') || href.startsWith('https:') || href.startsWith('//')) return false;
-    return true;
+    const target = new URL(href, location.href);
+    return ['http:', 'https:'].includes(target.protocol) && target.origin === location.origin;
   }
 
   function setActiveNav(url) {
@@ -57,7 +58,13 @@
     if (scrim) scrim.classList.remove('is-visible');
   }
 
+  let navigation = 0;
+  let pendingRequest;
   async function navigateTo(url, { push = true } = {}) {
+    const ticket = ++navigation;
+    pendingRequest?.abort();
+    pendingRequest = new AbortController();
+    const stale = () => ticket !== navigation;
     if (navProgress) {
       navProgress.classList.remove('is-done');
       navProgress.classList.add('is-active');
@@ -65,13 +72,18 @@
 
     let res;
     try {
-      res = await fetch(url, { credentials: 'same-origin' });
+      res = await fetch(url, { credentials: 'same-origin', signal: pendingRequest.signal });
     } catch (err) {
+      if (stale() || err.name === 'AbortError') return;
       // Network hiccup: fall back to a real navigation rather than
       // leave the user stuck on a half-updated view with no feedback.
       window.location.href = url;
       return;
     }
+
+    if (stale()) return;
+    // Preserve the server's destination (including permission redirects).
+    url = res.url || new URL(url, location.href).href;
 
     // A session expiring mid-visit means every page route redirects to
     // /login (server-side, via RedirectResponse) -- fetch() follows
@@ -88,7 +100,10 @@
       return;
     }
 
-    const html = await res.text();
+    let html;
+    try { html = await res.text(); }
+    catch (err) { if (!stale() && err.name !== 'AbortError') window.location.href = url; return; }
+    if (stale()) return;
     const doc = new DOMParser().parseFromString(html, 'text/html');
     const newRoot = doc.getElementById('view-root');
     if (!newRoot) {
@@ -99,15 +114,14 @@
       return;
     }
 
-    if (window.AAAPlatform && AAAPlatform.runViewCleanup) {
-      AAAPlatform.runViewCleanup();
-    }
-
     if (!reduceMotion) {
       viewRoot.classList.add('is-leaving');
       await new Promise((resolve) => setTimeout(resolve, 120));
     }
 
+    if (stale()) return;
+    // Cleanup only the view actually being replaced, after the final await.
+    window.AAAPlatform?.runViewCleanup?.();
     document.title = doc.title;
     if (breadcrumbEl) breadcrumbEl.textContent = newRoot.dataset.breadcrumb || '';
 
@@ -133,6 +147,7 @@
     // or direct URL visit, since only those cases involve a real page
     // load where the URL was already correct from the start.
     if (push) history.pushState({ spa: true }, '', url);
+    else if (url !== location.href) history.replaceState({ spa: true }, '', url);
 
     // Re-execute the fetched page's own inline scripts -- scoped
     // specifically to #view-scripts-container (see app_shell.html's
@@ -174,6 +189,8 @@
       setTimeout(() => navProgress.classList.remove('is-done'), 300);
     }
 
+    const heading = viewRoot.querySelector('h1');
+    if (heading) { heading.tabIndex = -1; heading.focus({ preventScroll: true }); }
     window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
   }
 
@@ -198,6 +215,13 @@
     });
   }
   document.addEventListener('keydown', (event) => {
+    if (event.key === 'Tab' && sidebar?.classList.contains('is-open')) {
+      const items = [...sidebar.querySelectorAll('a[href],button:not(:disabled),input:not(:disabled)')].filter(el => el.getClientRects().length);
+      const first = items[0], last = items.at(-1);
+      if (first && (event.shiftKey ? document.activeElement === first || !sidebar.contains(document.activeElement) : document.activeElement === last || !sidebar.contains(document.activeElement))) {
+        event.preventDefault(); (event.shiftKey ? last : first).focus();
+      }
+    }
     if (event.key === 'Escape' && sidebar?.classList.contains('is-open')) {
       closeMobileNav(); navToggle?.focus();
     }

@@ -60,6 +60,8 @@
 
 {% block view_scripts %}
 <script>
+(() => {
+  const document = SecurityUI.scopeDocument();
   function escapeHtml(s) {
     // Escapes quotes as well as angle brackets, so the result is safe
     // inside an HTML ATTRIBUTE and not only in text position. The
@@ -87,7 +89,12 @@
 
   async function loadCandidate() {
     const panel = document.getElementById('candidate-panel');
-    const res = await AAAPlatform.authedFetch('/api/config/candidate');
+    let res;
+    try { res = await AAAPlatform.authedFetch('/api/config/candidate'); }
+    catch {
+      panel.innerHTML = '<div class="panel-body" role="alert">Could not check pending changes. Connection interrupted. Refresh to retry.</div>';
+      return;
+    }
     if (res.status === 401) { window.location.href = '/login'; return; }
 
     if (!res.ok) {
@@ -150,9 +157,16 @@
     btn.disabled = true;
     btn.textContent = 'Applying…';
 
-    const res = await AAAPlatform.authedFetch('/api/config/apply', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
-    });
+    let res;
+    try {
+      res = await AAAPlatform.authedFetch('/api/config/apply', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+      });
+    } catch {
+      AAAPlatform.toast('Connection interrupted. Apply outcome is unknown. Refresh Configuration and check service status before retrying.', 'error');
+      btn.textContent = 'Outcome unknown — refresh before retrying';
+      return;
+    }
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -373,5 +387,6 @@
 
   loadCandidate();
   loadVersions();
+})();
 </script>
 {% endblock %}

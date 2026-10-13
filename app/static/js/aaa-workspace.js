@@ -75,7 +75,9 @@
       const p = document.createElement('p'); p.className = 'aaa-detail-value'; p.textContent = String(value ?? 'Not available');
       body.append(h, p);
     }
-    return root.NetOpsUI.openDrawer({title,body});
+    const drawer = root.NetOpsUI.openDrawer({title,body});
+    if (drawer) root.AAAPlatform.onViewLeave(() => drawer.close());
+    return drawer;
   }
   async function suggestions(input, endpoint, field) {
     if (!input) return;

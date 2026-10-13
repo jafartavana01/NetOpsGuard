@@ -61,3 +61,18 @@ Coverage includes account/role mutations, missing permission catalogs, confirmat
 GUI-06 verification: 172 browser checks and 8 authorization/CSRF tests passed. Existing browser regressions passed (471 checks across GUI-01–05, atomic policy, restoration, and dependency deletion). F03 remains 189 PASS / 13 XFAIL; `--no-xfail` exposes those same 13 failures. PostgreSQL suites explicitly skipped 57 tests because no disposable test DSN was supplied. Native AAA, directory, and device verification was not performed in this GUI phase.
 
 Known deferred work remains: NCM backup-schedule execution and actual backup creation, audit-comparison resolution semantics, PostgreSQL verification, native AAA/device testing, and directory TLS trust enforcement. Passing GUI checks does not clear these issues.
+
+## Interface consistency regression tests
+
+```sh
+node tests/gui07/browser.cjs
+node tests/gui07/layout.cjs
+```
+
+These scripts use `python` from PATH, Playwright, `GUI_CHROMIUM`, and (for the layout check) `GUI_CHART_JS`. Run them sequentially: both serve actual templates on loopback port 8771 with synthetic API fixtures. They print results without creating evidence packages.
+
+Coverage includes rapid and redirected navigation, refresh/back/forward, drawer cleanup, phone/tablet layouts, keyboard cancellation and sorting, notification accessibility, stale RADIUS scope values, missing option lists, denied and failed saves, blocked candidates, and interrupted Apply requests. An interrupted Apply reports an unknown outcome and requires a fresh review before retrying.
+
+GUI-07 verification: 88 focused browser checks and 126 layout checks passed. The layout matrix covers 42 pages at 390, 768, and 1440px; focused dialog/table checks also cover 360, 1366, and 1920px. Existing GUI-01–06, atomic-policy, restoration, and deletion browser regressions passed all 643 checks. F03 remains 189 PASS / 13 XFAIL, with the same 13 failures exposed by `--no-xfail`. Existing authorization/CSRF checks and project regression scripts passed without changing their assertions.
+
+PostgreSQL suites explicitly skipped 57 tests without a disposable test DSN. Real Cisco, tac_plus-ng/MAVIS, directory, and NAS verification were not performed. Known NCM scheduling, audit-comparison, LDAP certificate-verification, and role-deletion privilege-fallback defects remain open; these interface checks do not clear them for release.

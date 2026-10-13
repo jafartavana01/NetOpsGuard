@@ -23,17 +23,28 @@ window.AAAPlatform = (function () {
   function toast(message, kind = 'success') {
     const el = document.createElement('div');
     el.className = 'toast toast-' + kind;
-    el.textContent = message;
-    document.body.appendChild(el);
-    setTimeout(() => el.remove(), 5000);
+    let stack = document.getElementById('notification-stack');
+    if (!stack) { stack = document.createElement('div'); stack.id = 'notification-stack'; document.body.append(stack); }
+    const text = document.createElement('span'); text.textContent = message;
+    text.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+    const dismiss = document.createElement('button'); dismiss.type = 'button'; dismiss.className = 'shell-icon-button';
+    dismiss.textContent = '×'; dismiss.setAttribute('aria-label', 'Dismiss notification'); dismiss.onclick = () => el.remove();
+    el.append(text, dismiss); stack.append(el);
+    // Errors remain available until dismissed; never hide a failed operation.
+    if (kind !== 'error') setTimeout(() => { if (!el.matches(':hover,:focus-within')) el.remove(); }, 5000);
   }
 
   function wireLogout() {
     const btn = document.getElementById('logout-btn');
     if (!btn) return;
     btn.addEventListener('click', async () => {
-      await authedFetch('/api/auth/logout', { method: 'POST' });
-      window.location.href = '/login';
+      if (btn.disabled) return;
+      btn.disabled = true;
+      try {
+        const res = await authedFetch('/api/auth/logout', { method: 'POST' });
+        if (!res.ok) throw Error('Sign out failed. Please try again.');
+        window.location.href = '/login';
+      } catch { toast('Could not confirm sign out. Please try again.', 'error'); btn.disabled = false; }
     });
   }
 
@@ -60,7 +71,7 @@ window.AAAPlatform = (function () {
     // focusing -- focusing in the same tick as removing `hidden` can
     // silently no-op on an element still transitioning into a
     // focusable state.
-    requestAnimationFrame(() => candidate.focus());
+    requestAnimationFrame(() => { if (backdrop.isConnected && !backdrop.hidden) candidate.focus(); });
   }
 
   const modalAutofocusObserver = new MutationObserver((mutations) => {
@@ -211,88 +222,71 @@ window.AAAPlatform = (function () {
    * the safe default here (defaulting to keep-editing, not silently
    * discarding real edits) needs one.
    */
-  (function setupEscToClose() {
-    const dirtyModals = new WeakSet();
-
-    function isRealModal(el) {
-      return el && el.classList && el.classList.contains('modal-backdrop')
-        && el.id !== 'unsaved-changes-modal-backdrop';
+  document.addEventListener('DOMContentLoaded', function setupEscToClose() {
+    const dirty = new WeakSet(), openers = new WeakMap();
+    const prompt = document.getElementById('unsaved-changes-modal-backdrop');
+    const keep = document.getElementById('unsaved-changes-keep-editing-btn');
+    const discard = document.getElementById('unsaved-changes-discard-btn');
+    let pending = null, approved = null;
+    // These adapters already own cancellation and busy-state handling.
+    const managed = el => el.matches('.ops-overlay,.admin-overlay,.security-overlay');
+    const top = () => [...document.querySelectorAll('.modal-backdrop,.drawer-backdrop')].filter(el => !el.hidden).at(-1);
+    const busy = el => el.getAttribute('aria-busy') === 'true' || !!el.querySelector('[aria-busy="true"],[data-busy="true"]');
+    function closeThroughControl(el) {
+      if (!el?.isConnected || busy(el)) return;
+      const closer = el.querySelector('.modal-close-btn,[data-dialog-close]');
+      approved = el;
+      try { if (closer) closer.click(); else el.hidden = true; }
+      finally { approved = null; }
     }
-
-    document.addEventListener('input', (e) => {
-      const backdrop = e.target.closest && e.target.closest('.modal-backdrop');
-      if (isRealModal(backdrop) && !backdrop.hidden) dirtyModals.add(backdrop);
-    }, true);
-    document.addEventListener('change', (e) => {
-      const backdrop = e.target.closest && e.target.closest('.modal-backdrop');
-      if (isRealModal(backdrop) && !backdrop.hidden) dirtyModals.add(backdrop);
-    }, true);
-
-    const observer = new MutationObserver((mutations) => {
-      mutations.forEach((m) => {
-        if (m.attributeName === 'hidden' && isRealModal(m.target) && !m.target.hidden) {
-          dirtyModals.delete(m.target); // just opened (or re-opened) -- start clean
+    function requestClose(el) {
+      if (busy(el)) return;
+      if (dirty.has(el) && prompt) {
+        pending = el; prompt.hidden = false; keep?.focus();
+      } else closeThroughControl(el);
+    }
+    const changed = e => {
+      const el = e.target.closest?.('.modal-backdrop,.drawer-backdrop');
+      if (el && el !== prompt && !el.hidden) dirty.add(el);
+    };
+    document.addEventListener('input', changed, true);
+    document.addEventListener('change', changed, true);
+    const observer = new MutationObserver(records => records.forEach(({target:el}) => {
+      if (!el.matches('.modal-backdrop,.drawer-backdrop') || managed(el)) return;
+      if (!el.hidden) {
+        dirty.delete(el); openers.set(el, document.activeElement);
+        const panel = el.querySelector('.modal,.drawer');
+        if (panel) {
+          panel.setAttribute('role','dialog'); panel.setAttribute('aria-modal','true'); panel.tabIndex = -1;
+          const heading = panel.querySelector('h2');
+          if (heading) { heading.id ||= el.id + '-heading'; panel.setAttribute('aria-labelledby',heading.id); }
         }
-      });
+      } else if (openers.get(el)?.isConnected) openers.get(el).focus({preventScroll:true});
+    }));
+    observer.observe(document.body, {attributes:true, attributeFilter:['hidden'], subtree:true});
+    document.addEventListener('click', e => {
+      const el = e.target.closest?.('.modal-backdrop,.drawer-backdrop');
+      if (!el || el === prompt || managed(el) || approved === el) return;
+      const button = e.target.closest('button');
+      const cancelling = e.target === el || button?.matches('.modal-close-btn,[data-dialog-close],[id$="-cancel"],[id$="-cancel-btn"]');
+      if (!cancelling || (!dirty.has(el) && !busy(el))) return;
+      e.preventDefault(); e.stopImmediatePropagation(); requestClose(el);
+    }, true);
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      const el = top(); if (!el) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      if (el === prompt) { prompt.hidden = true; pending?.querySelector('input,button')?.focus(); pending = null; }
+      else requestClose(el);
     });
-    observer.observe(document.body, { attributes: true, attributeFilter: ['hidden'], subtree: true });
-
-    function topVisibleModal() {
-      const visible = Array.from(document.querySelectorAll('.modal-backdrop')).filter((el) => isRealModal(el) && !el.hidden);
-      return visible.length ? visible[visible.length - 1] : null;
-    }
-
-    document.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape') return;
-
-      const unsavedModal = document.getElementById('unsaved-changes-modal-backdrop');
-      if (unsavedModal && !unsavedModal.hidden) {
-        // Escape on the confirm prompt itself acts like "Keep
-        // editing" -- the same safe default as its focused button,
-        // not another level of confirmation.
-        unsavedModal.hidden = true;
-        return;
-      }
-
-      const target = topVisibleModal();
-      if (!target) return;
-
-      if (dirtyModals.has(target) && unsavedModal) {
-        unsavedModal.hidden = false;
-      } else {
-        target.hidden = true;
-      }
+    keep?.addEventListener('click', () => {
+      prompt.hidden = true; pending?.querySelector('input,button')?.focus(); pending = null;
     });
-
-    const keepEditingBtn = document.getElementById('unsaved-changes-keep-editing-btn');
-    const discardBtn = document.getElementById('unsaved-changes-discard-btn');
-    if (keepEditingBtn) {
-      keepEditingBtn.addEventListener('click', () => {
-        document.getElementById('unsaved-changes-modal-backdrop').hidden = true;
-      });
-    }
-    if (discardBtn) {
-      discardBtn.addEventListener('click', () => {
-        document.getElementById('unsaved-changes-modal-backdrop').hidden = true;
-        // Re-query for the currently-visible real modal AT CLICK TIME,
-        // rather than relying on a value captured earlier when Escape
-        // was first pressed. The dirty modal stays visible (just
-        // overlaid) for the entire time this confirm prompt is
-        // showing, so this is provably correct regardless of any
-        // staleness a captured-earlier reference could develop --
-        // deliberately removed the earlier `pendingCloseTarget`
-        // closure variable entirely rather than trust it, after a
-        // real report that "Discard and close" did nothing even after
-        // many clicks and this project's own testing could not
-        // conclusively reproduce a root cause to fix more narrowly.
-        const target = topVisibleModal();
-        if (target) {
-          target.hidden = true;
-          dirtyModals.delete(target);
-        }
-      });
-    }
-  })();
+    discard?.addEventListener('click', () => {
+      const el = pending; pending = null; prompt.hidden = true;
+      if (el) { closeThroughControl(el); if (el.hidden) dirty.delete(el); }
+    });
+  });
 
   let openContextMenuEl = null;
 
@@ -527,24 +521,6 @@ window.AAAPlatform = (function () {
       .filter((el) => !el.hidden);
   }
 
-  document.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape') return;
-    const open = visibleDialogs();
-    if (!open.length) return;
-    // Topmost only: closing every stacked dialog at once would discard
-    // work the person cannot see.
-    const dialog = open[open.length - 1];
-
-    // Prefer the page's own close control, so its cleanup runs rather
-    // than being bypassed by hiding the element directly.
-    const closer = dialog.querySelector('.modal-close-btn, [data-dialog-close]');
-    if (closer) {
-      closer.click();
-      return;
-    }
-    dialog.hidden = true;
-  });
-
   // Focus containment: Tab inside an open dialog must not walk into the
   // page behind it, which is both disorienting and a way to edit fields
   // you cannot see.
@@ -623,7 +599,7 @@ window.AAAPlatform = (function () {
     headers.forEach((th, index) => {
       if (th.dataset.noSort !== undefined || !th.textContent.trim()) return;
       th.style.cursor = 'pointer';
-      th.setAttribute('role', 'button');
+      th.setAttribute('aria-sort', 'none');
       th.setAttribute('tabindex', '0');
       th.title = 'Sort by ' + th.textContent.trim();
 
@@ -633,10 +609,11 @@ window.AAAPlatform = (function () {
         const ascending = th.dataset.sortDir !== 'asc';
         headers.forEach((other) => {
           delete other.dataset.sortDir;
+          other.setAttribute('aria-sort', 'none');
           other.textContent = other.textContent.replace(/\s*[\u2191\u2193]$/, '');
         });
         th.dataset.sortDir = ascending ? 'asc' : 'desc';
-        th.textContent = th.textContent.replace(/\s*[\u2191\u2193]$/, '') + (ascending ? ' \u2191' : ' \u2193');
+        th.setAttribute('aria-sort', ascending ? 'ascending' : 'descending');
 
         const rows = [...body.querySelectorAll('tr')];
         const value = (row) => (row.children[index] ? row.children[index].textContent.trim() : '');
