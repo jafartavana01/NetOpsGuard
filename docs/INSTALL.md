@@ -111,7 +111,7 @@ superadmin by default).
 HTTPS defaults on in the current settings model. Verify the actual protocol after installation and replace or explicitly trust the self-signed certificate. If certificate files are missing and HTTPS was only inherited from defaults, the runner can warn and start HTTP; an explicitly enabled HTTPS setting with missing files refuses startup. Do not proceed with regular credential entry over HTTP.
 
 
-## Known verification items
+## Installation compatibility notes
 
 This installer builds and configures tac_plus-ng based on the
 upstream project's public README, PREREQUISITES.txt, and sample
@@ -150,6 +150,19 @@ on your first install and first configuration apply:
   as a comment in the generated file instead. IPv4 devices are fully
   functional.
 
+
+## Service checks and troubleshooting
+
+After installation, verify the actual listening addresses and service status:
+
+```bash
+sudo systemctl status aaa-platform.service --no-pager
+sudo systemctl status tac-plus-ng.service --no-pager
+sudo ss -lntup
+```
+
+The RADIUS listeners (commonly UDP 1812/1813) depend on the chosen daemon build and configuration. Device operations commonly require outbound SSH (TCP 22); directory integration may require outbound LDAPS (TCP 636). Open only necessary network paths. See [Troubleshooting](TROUBLESHOOTING.md) for authentication, connectivity, and backup-schedule verification.
+
 ## Applying your first device
 
 Once you've added a device under **TACACS+ → Devices**, nothing
@@ -158,17 +171,11 @@ click **Apply configuration** -- that page shows exactly what would
 change (a diff against what's actually deployed on disk), and only
 touches the running daemon once you confirm.
 
-## Re-running the installer
+## Re-running the installer and upgrading
 
-**This project targets clean installs only.** There is no supported
-upgrade path from an existing, populated installation to a newer
-version of this project -- `setup.py` is safe to re-run if it fails
-partway through (it reuses an existing PostgreSQL role/database and
-won't create a second administrator account if one already exists),
-but it does not attempt to reconcile an old database schema with a
-newer one. If you're picking up a newer version of this project,
-install it on a fresh VM rather than re-running the installer over an
-existing one.
+The installer detects existing installations and generally preserves the database and deployed AAA configuration by default. **This is not a guarantee of compatibility with every previous database schema.** On an existing deployment, it can report schema drift that requires a separately reviewed migration. Never assume that re-running `setup.py` performs every database migration safely.
+
+Before installing newer source over a populated system, read [Upgrade & recovery](UPGRADE.md), verify a database backup **and its matching encryption material**, and rehearse on a restored copy. Do not use `--force-config` unless intentionally resetting the generated AAA configuration.
 
 ## Uninstalling
 
