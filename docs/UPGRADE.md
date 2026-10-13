@@ -1,15 +1,26 @@
 # Upgrade and recovery
 
-Use a maintenance window and a recoverable backup. This guide does not promise compatibility with every historical schema or a one-command rollback.
+NetOpsGuard can detect an existing installation and report certain schema differences, but **a safe upgrade is not guaranteed for every older database or application version**. Use a maintenance window, follow a tested backup/restore procedure, and verify the intended target release before proceeding.
 
-1. Record the installed application snapshot and tac_plus-ng build commit.
-2. Back up PostgreSQL using the installation's database administrator procedure. Protect the backup as sensitive.
-3. Back up `/etc/aaa-platform`, generated configuration, configuration backups and device configuration archives. Keep encryption keys paired with database backups; do not publish either.
-4. Rehearse the upgrade on an isolated copy of the installation. Check schema initialization/migration messages and source-binding classifications.
-5. Run the new snapshot's supported installer from the complete source directory. Review the existing-installation prompts and any upstream build choice. Do not uninstall to perform an upgrade.
-6. Deploy editor and API together. Refresh browser assets and update API clients to the complete policy mutation contract.
-7. Check management login, services, inventory, policies and candidate diagnostics. Verify AAA permit/deny behavior with a lab device before applying changes broadly.
+## Before changing an existing installation
 
-Startup creates missing tables, applies the tracked external-group authority migration and runs the legacy additive-column helper. This is not a comprehensive migration framework for every historical schema. A migration failure must be investigated; do not manually erase restrictions or mark migrations successful.
+1. Record the currently deployed application version/commit and the AAA daemon build.
+2. Back up the PostgreSQL database and verify that the dump is readable.
+3. Securely back up `/etc/aaa-platform/` (including encryption and session material), generated AAA configuration, device configuration archives, and any operational files necessary for recovery.
+4. Keep each database backup with the matching encryption material. Store backups off the NetOpsGuard server with appropriate access controls.
+5. Rehearse the upgrade and rollback on an isolated restored copy, including critical permit/deny and NCM checks.
+6. Confirm that the target release supports the database schema and your directory/NAS integration.
 
-For rollback, restore a matching application version, database backup and encryption/configuration material using your tested recovery procedure. Older code may not understand newer schema or policy intent. Restoring only an old application ZIP is not a complete database rollback.
+## Applying a newer release
+
+The installer detects an existing installation and normally preserves the existing device, policy, and generated AAA state. **That does not make it a full database migration tool.** It can report missing columns and does not automatically resolve all schema drift. Some application startup paths perform scoped migrations, but these are not a comprehensive guarantee for arbitrary historical releases.
+
+After the backup and rehearsal, follow the specific instructions supplied with the target release. Avoid `--force-config` on a populated installation unless you deliberately intend to replace the existing deployed AAA configuration with bootstrap configuration.
+
+When the application and API change, deploy them together and refresh the browser. Recheck service health, administrator access, licence status, directory bindings, inventory, candidate diagnostics, and critical authorization policies. Confirm real-world permit and deny outcomes on a lab device before any broad deployment.
+
+## If the upgrade does not work
+
+Stop and diagnose rather than manually relaxing scope restrictions or ignoring schema errors. An application-only rollback may not work with a newer database schema. Restore a **matching** application version, database, configuration, and encryption material using the recovery procedure previously tested in your environment. A generated tac_plus-ng file or source ZIP by itself is not a complete platform backup.
+
+For first checks and service logs, see [Troubleshooting](TROUBLESHOOTING.md). For installation details, see [Installation](INSTALL.md).
