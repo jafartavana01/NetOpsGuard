@@ -61,3 +61,7 @@ Coverage includes account/role mutations, missing permission catalogs, confirmat
 GUI-06 verification: 172 browser checks and 8 authorization/CSRF tests passed. Existing browser regressions passed (471 checks across GUI-01–05, atomic policy, restoration, and dependency deletion). F03 remains 189 PASS / 13 XFAIL; `--no-xfail` exposes those same 13 failures. PostgreSQL suites explicitly skipped 57 tests because no disposable test DSN was supplied. Native AAA, directory, and device verification was not performed in this GUI phase.
 
 Known deferred work remains: NCM backup-schedule execution and actual backup creation, audit-comparison resolution semantics, PostgreSQL verification, native AAA/device testing, and directory TLS trust enforcement. Passing GUI checks does not clear these issues.
+
+## GUI-07 shell follow-up
+
+The global Apply Configuration dialog and command palette received keyboard/focus and network-error feedback polish. Verify Ctrl+K, Escape, Tab/Shift+Tab, focus restoration, narrow screens, candidate failures, blocked candidates, successful Apply, rejected Apply, and interrupted Apply responses on a fixture and real authenticated session. Re-run GUI-01 through GUI-06 suites. GUI-07 is not complete until cross-page accessibility and regression verification succeeds. No execution claims are made here.

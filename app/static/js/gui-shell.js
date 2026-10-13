@@ -46,7 +46,7 @@
   document.addEventListener('spa:navigated',() => { active(); const root=document.getElementById('view-root'); root.focus({preventScroll:true}); });
   active();
   const palette=document.getElementById('cmdk-backdrop'),input=document.getElementById('cmdk-input'),results=document.getElementById('cmdk-results');
-  let opener=null,selected=0;
+  let opener=null,selected=0,priorOverflow='';
   function render(query) {
     results.replaceChildren(); selected=0;
     [...sidebar.querySelectorAll('a.nav-item')].filter(link=>(link.dataset.keywords || link.textContent).toLowerCase().includes(query.toLowerCase())).forEach(link => {
@@ -56,8 +56,23 @@
     highlight();
   }
   function highlight(){[...results.querySelectorAll('a')].forEach((link,i)=>link.classList.toggle('is-selected',i===selected));results.querySelector('.is-selected')?.scrollIntoView({block:'nearest'});}
-  function closePalette(){palette.hidden=true;if(opener?.isConnected)opener.focus();}
-  function openPalette(){opener=document.activeElement;palette.hidden=false;input.value='';render('');input.focus();}
+  function closePalette({restoreFocus=true}={}) {
+    if (palette.hidden) return;
+    palette.hidden=true;
+    document.body.style.overflow=priorOverflow;
+    if (restoreFocus && opener?.isConnected) opener.focus();
+    opener=null;
+  }
+  function openPalette(){
+    const applyModal=document.getElementById('global-apply-modal-backdrop');
+    if (!palette.hidden || document.querySelector('.gui-dialog-backdrop') || (applyModal && !applyModal.hidden)) return;
+    opener=document.activeElement;
+    priorOverflow=document.body.style.overflow;
+    document.body.style.overflow='hidden';
+    palette.hidden=false;
+    input.value='';render('');input.focus();
+  }
+  document.addEventListener('spa:navigated',()=>closePalette({restoreFocus:false}));
   input.addEventListener('input',()=>render(input.value));
   palette.addEventListener('click',e=>{if(e.target===palette)closePalette();});
   document.addEventListener('keydown',e=>{

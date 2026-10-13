@@ -63,7 +63,7 @@
   <div class="modal modal-md" role="dialog" aria-modal="true" aria-labelledby="global-apply-title" style="max-width: min(90vw, 900px); width: 90vw; max-height: 85vh">
     <h2 id="global-apply-title">Apply Configuration</h2>
     <p class="content-sub" id="global-apply-description" style="margin-top:-8px;">Review the candidate before applying it.</p>
-    <div id="global-apply-diff" class="cell-mono content-sub" style="white-space:pre-wrap;background:var(--bg-void);border:1px solid var(--line);border-radius:var(--radius);padding:12px;max-height:55vh;overflow-y:auto;margin-bottom:16px;"></div>
+    <div id="global-apply-diff" tabindex="0" aria-label="Candidate configuration diff or diagnostics" class="cell-mono content-sub" style="white-space:pre-wrap;background:var(--bg-void);border:1px solid var(--line);border-radius:var(--radius);padding:12px;max-height:55vh;overflow-y:auto;margin-bottom:16px;"></div>
     <div id="global-apply-error" class="form-error" role="alert" hidden></div>
     <div class="modal-actions">
       <button type="button" class="btn-ghost" id="global-apply-cancel-btn">Cancel</button>
@@ -128,6 +128,15 @@
     const errorBox = document.getElementById('global-apply-error');
     const confirmBtn = document.getElementById('global-apply-confirm-btn');
     const cancelBtn = document.getElementById('global-apply-cancel-btn');
+    const appShell = document.querySelector('.app-shell');
+    let focusBeforeModal = null, oldInert = false, applyInFlight = false;
+    function closeModal() {
+      if (applyInFlight || modalBackdrop.hidden) return;
+      modalBackdrop.hidden = true;
+      if (appShell) appShell.inert = oldInert;
+      if (focusBeforeModal?.isConnected) focusBeforeModal.focus();
+      focusBeforeModal = null;
+    }
 
     async function checkPending() {
       try {
@@ -164,6 +173,9 @@
     }
 
     async function openModal() {
+      if (!modalBackdrop.hidden || applyInFlight || document.querySelector('.gui-dialog-backdrop')) return;
+      focusBeforeModal = document.activeElement;
+      oldInert = !!appShell?.inert;
       document.getElementById('global-apply-title').textContent = 'Apply Configuration';
       document.getElementById('global-apply-description').textContent = 'Review the candidate before applying it.';
       errorBox.hidden = true;
@@ -172,15 +184,21 @@
       confirmBtn.hidden = true;
       confirmBtn.textContent = 'Apply';
       modalBackdrop.hidden = false;
-
-      const res = await AAAPlatform.authedFetch('/api/config/candidate');
-      if (!res.ok) {
+      if (appShell) appShell.inert = true;
+      cancelBtn.focus();
+      let data;
+      try {
+        const res = await AAAPlatform.authedFetch('/api/config/candidate');
+        if (!res.ok) throw new Error('Candidate fetch failed');
+        data = await res.json();
+      } catch (_) {
+        if (modalBackdrop.hidden) return;
         diffBox.textContent = '';
-        errorBox.textContent = 'Could not load the pending changes.';
+        errorBox.textContent = 'Could not load the pending changes. Check the connection and try again.';
         errorBox.hidden = false;
         return;
       }
-      const data = await res.json();
+      if (modalBackdrop.hidden) return;
       if (data.applicable === false) {
         document.getElementById('global-apply-title').textContent = 'Configuration blocked';
         document.getElementById('global-apply-description').textContent = 'Resolve the validation issues below before applying a new configuration.';
@@ -210,33 +228,61 @@
     }
 
     applyBtn.addEventListener('click', openModal);
-    cancelBtn.addEventListener('click', () => { modalBackdrop.hidden = true; });
-    modalBackdrop.addEventListener('click', (e) => {
-      if (e.target.id === 'global-apply-modal-backdrop') modalBackdrop.hidden = true;
+    cancelBtn.addEventListener('click', closeModal);
+    modalBackdrop.addEventListener('click', e => {
+      if (e.target === modalBackdrop) closeModal();
     });
-
+    modalBackdrop.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && !applyInFlight) {
+        e.preventDefault(); closeModal();
+      }
+      if (e.key !== 'Tab') return;
+      const items = [...modalBackdrop.querySelectorAll('button:not([disabled]),[tabindex="0"]')]
+        .filter(el => el.getClientRects().length);
+      if (!items.length) { e.preventDefault(); return; }
+      if (e.shiftKey && document.activeElement === items[0]) {
+        e.preventDefault(); items[items.length - 1].focus();
+      } else if (!e.shiftKey && document.activeElement === items[items.length - 1]) {
+        e.preventDefault(); items[0].focus();
+      }
+    });
+    document.addEventListener('spa:navigated', closeModal);
     confirmBtn.addEventListener('click', async () => {
+      if (applyInFlight) return;
+      applyInFlight = true;
       errorBox.hidden = true;
       confirmBtn.disabled = true;
+      cancelBtn.disabled = true;
       confirmBtn.textContent = 'Applying…';
-      const res = await AAAPlatform.authedFetch('/api/config/apply', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        const detail = body.detail;
-        const msg = (detail && typeof detail === 'object' && detail.message) ? detail.message
-          : (typeof detail === 'string') ? detail
-          : 'Apply failed.';
-        errorBox.textContent = msg;
+      modalBackdrop.querySelector('[role="dialog"]').setAttribute('aria-busy','true');
+      try {
+        const res = await AAAPlatform.authedFetch('/api/config/apply', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          const detail = body.detail;
+          errorBox.textContent = (detail && typeof detail === 'object' && detail.message) ? detail.message
+            : (typeof detail === 'string') ? detail : 'Apply failed.';
+          errorBox.hidden = false;
+          return;
+        }
+        applyInFlight = false;
+        closeModal();
+        applyBtn.hidden = true;
+        AAAPlatform.toast('Configuration applied.');
+      } catch (_) {
+        errorBox.textContent = 'Connection interrupted. Verify deployed configuration before retrying.';
         errorBox.hidden = false;
-        confirmBtn.disabled = false;
-        confirmBtn.textContent = 'Apply';
-        return;
+      } finally {
+        applyInFlight = false;
+        cancelBtn.disabled = false;
+        modalBackdrop.querySelector('[role="dialog"]').setAttribute('aria-busy','false');
+        if (!modalBackdrop.hidden) {
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = 'Apply';
+        }
       }
-      modalBackdrop.hidden = true;
-      applyBtn.hidden = true;
-      AAAPlatform.toast('Configuration applied.');
     });
 
     checkPending();

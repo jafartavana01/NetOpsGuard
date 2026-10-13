@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — GUI-07 shell polish (in progress)
+
+- Keyboard-accessible shared Apply Configuration dialog with focus trapping/restoration, Escape handling, background inerting, and failed candidate handling.
+- Interrupted Apply connections now ask the operator to verify deployed configuration rather than incorrectly assume the Apply did not happen.
+- Command palette restores focus and scrolling on dismissal, including SPA navigation.
+- Narrow-screen global configuration action no longer overflows the topbar.
+- Presentation and existing API integration only; no change to authorization, compiler, NCM or audit logic.
+
+NCM backup scheduling, audit comparison semantics, LDAP certificate trust verification and role-deletion privilege fallback remain separate functional/security work. GUI-07 is not complete.
+
+
 ## Unreleased — System & Administration workspace
 
 - Consistent administration navigation, searchable account/role tables, accessible dialogs, and unsaved-change protection.

@@ -63,3 +63,11 @@ body.sidebar-collapsed #sidebar-collapse-btn svg { transform:rotate(-90deg); }
  #breadcrumb-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:150px; }
  #shell-help-btn { display:none; }
 }
+
+/* GUI-07: avoid global action overflow in compact topbars. */
+#global-apply-config-btn { max-width:210px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+@media(max-width:640px) {
+  #global-apply-config-btn { max-width:116px; }
+  .topbar-right { min-width:0; }
+  .topbar .breadcrumb { min-width:0; flex:1; }
+}
