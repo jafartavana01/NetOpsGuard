@@ -1,5 +1,5 @@
 title: "NetOpsGuard"
-description: "Self-hosted TACACS+ AAA, Cisco command authorization, Active Directory integration, network configuration backup, and security auditing."
+description: "NetOpsGuard offers self-hosted TACACS+ AAA, RADIUS, Cisco security auditing and network configuration backup. Free for 5 devices; annual licences from $99."
 url: "https://jafartavana01.github.io"
 baseurl: "/NetOpsGuard"
 repository: "jafartavana01/NetOpsGuard"

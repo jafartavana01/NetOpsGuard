@@ -11,6 +11,10 @@ permalink: /faq/
 
 The source is provided under the **Apache License 2.0**. The **Community** edition supports up to **five devices**, with the currently available platform features; higher device limits use signed licences. See [licensing](https://github.com/jafartavana01/NetOpsGuard/blob/main/docs/LICENSING.md).
 
+## How much does NetOpsGuard cost?
+
+NetOpsGuard Community is **free for five devices**. Proposed introductory annual licences are **Starter: US$99 (15 devices)**, **Professional: US$299 (50 devices)**, **Business: US$599 (100 devices)**, and **Enterprise: US$1,299 (300 devices)**. Unlimited capacity is quoted individually. Prices are subject to confirmation with the maintainer. [Full licence pricing]({{ '/pricing/' | relative_url }}).
+
 ## How can I request a licence for more than five devices?
 
 You can request a signed licence by emailing [tavanajafar2@gmail.com](mailto:tavanajafar2@gmail.com) or contacting the maintainer via [Telegram @Powerinfossl](https://t.me/Powerinfossl). The [licensing information page]({{ '/licensing/' | relative_url }}) lists the WhatsApp ID, phone contact and request process.

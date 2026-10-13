@@ -2,6 +2,21 @@
 
 The Community edition supports up to five devices. Signed licences increase the device limit; the installed entitlement display is authoritative for the imported licence. Licensing does not turn planned functionality into supported functionality.
 
+## Introductory annual licence prices
+
+| Edition | Managed devices | Introductory annual licence |
+| --- | ---: | ---: |
+| Community | Up to 5 | **Free** |
+| Starter | Up to 15 | **US$99/year** |
+| Professional | Up to 50 | **US$299/year** |
+| Business | Up to 100 | **US$599/year** |
+| Enterprise | Up to 300 | **US$1,299/year** |
+| Unlimited | No fixed device limit | **Contact for a quote** |
+
+Prices are **proposed introductory rates in US dollars**, quoted by the maintainer and subject to confirmation before purchase. All listed editions include the currently available platform feature set; licences primarily adjust the permitted number of devices. These figures do not imply an automatic online checkout, a particular service-level agreement, or tested production compatibility with all device types. The active imported entitlement displayed by the platform remains authoritative.
+
+See [Pricing and product comparison](pricing.md) for a comparison with ManageEngine's separate NCM product and the source of the published competitor prices.
+
 ## Requesting a licence
 
 Contact the NetOpsGuard maintainer to request a signed licence for a higher device limit, ask about licence availability, or discuss migration to another server:

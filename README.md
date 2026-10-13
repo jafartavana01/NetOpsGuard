@@ -4,7 +4,7 @@
 
 NetOpsGuard helps network teams control who can access their infrastructure, which commands they can run, and what changes on their devices. It brings **TACACS+ AAA**, **Active Directory/LDAP integration**, **device inventory**, **Security Center**, **network configuration management (NCM)**, and **SSH command operations** into a unified platform.
 
-**Free Community edition: up to 5 devices, with the currently available feature set.** Larger device limits are available through signed licences. [See licensing](docs/LICENSING.md).
+**Free Community edition: up to 5 devices, with the currently available feature set.** Introductory paid licences start at **US$99/year for 15 devices**. Larger device limits are available through signed licences. [View all pricing](docs/pricing.md) and [licensing details](docs/LICENSING.md).
 
 > **Previously known as NetworkAAA.** NetOpsGuard is the current project name and repository. Please link to this repository when referencing the platform.
 
@@ -120,6 +120,23 @@ The management port and certain service settings are configurable. Open only the
 ## Licensing
 
 NetOpsGuard's source code is available under the [Apache License 2.0](LICENSE). Runtime editions use device-count entitlements: **Community is free for up to five devices**, and signed licences allow larger fleets. Read [docs/LICENSING.md](docs/LICENSING.md) for details.
+
+### Introductory licence pricing (USD)
+
+| Edition | Managed devices | Introductory annual licence |
+| --- | ---: | ---: |
+| Community | Up to 5 | **Free** |
+| Starter | Up to 15 | **US$99/year** |
+| Professional | Up to 50 | **US$299/year** |
+| Business | Up to 100 | **US$599/year** |
+| Enterprise | Up to 300 | **US$1,299/year** |
+| Unlimited | No fixed device limit | **Contact for a quote** |
+
+Prices are proposed introductory annual rates, subject to confirmation with the maintainer; they are not an automated checkout or a guarantee of support or SLA. Available product features are not differentiated by these device-count editions. [Full pricing and comparison](docs/pricing.md).
+
+### NCM price comparison
+
+ManageEngine's separate Network Configuration Manager Professional edition lists **US$958/year for 50 devices**, compared with NetOpsGuard **US$299/year for up to 50 devices**. NetOpsGuard also includes its available TACACS+ AAA, RADIUS, AD/LDAP, NCM, Security Center, and Network Operations modules. This is a price and product-scope comparison, **not a claim of equivalent NCM functionality or support**. [Official ManageEngine NCM prices](https://store.manageengine.com/network-configuration-manager/index.html) (checked 13 October 2026). [Detailed comparison](docs/pricing.md).
 
 ### Request a NetOpsGuard licence
 

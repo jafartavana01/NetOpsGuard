@@ -1,7 +1,7 @@
 ---
 layout: default
-title: "NetOpsGuard Licensing — Free Community and Device Limits"
-description: "Get NetOpsGuard licensing information. Community is free for five devices; contact the maintainer via email, Telegram, WhatsApp or phone to request a larger licence."
+title: "NetOpsGuard Pricing and Licensing — Free, Starter and Enterprise"
+description: "Compare NetOpsGuard annual licence prices: free for 5 devices, Starter $99/year for 15, Professional $299/year for 50, and Business $599/year for 100."
 permalink: /licensing/
 ---
 
@@ -10,6 +10,21 @@ permalink: /licensing/
 NetOpsGuard is a self-hosted network AAA and security operations platform. The **Community edition is free for up to five managed devices** and includes the currently available platform features. Teams managing larger networks can request **signed licences** with increased device limits.
 
 The project's source code is licensed separately under [Apache License 2.0](https://github.com/jafartavana01/NetOpsGuard/blob/main/LICENSE). A signed runtime licence determines the installation's device entitlement.
+
+## Introductory NetOpsGuard annual pricing
+
+| Edition | Managed devices | Introductory annual licence |
+| --- | ---: | ---: |
+| Community | Up to 5 | **Free** |
+| Starter | Up to 15 | **US$99/year** |
+| Professional | Up to 50 | **US$299/year** |
+| Business | Up to 100 | **US$599/year** |
+| Enterprise | Up to 300 | **US$1,299/year** |
+| Unlimited | No fixed device limit | **Contact for a quote** |
+
+All editions include the currently available features. Prices are proposed introductory rates in **US dollars**, subject to confirmation when requesting a signed licence. Contact the maintainer for availability and terms. These prices do not include any promised SLA or paid implementation services.
+
+**Interested in a comparison?** The [pricing comparison]({{ '/pricing/' | relative_url }}) includes ManageEngine Network Configuration Manager's published annual subscription rates and important differences in product scope and support.
 
 ## Contact the maintainer to request a licence
 

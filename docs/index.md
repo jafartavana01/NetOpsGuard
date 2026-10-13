@@ -1,7 +1,7 @@
 ---
 layout: default
 title: "NetOpsGuard: self-hosted TACACS+ AAA and network security operations"
-description: "NetOpsGuard combines TACACS+ command authorization, AD/LDAP identity, RADIUS, network configuration backups, Cisco security audits, and SSH operations. Free for five devices."
+description: "NetOpsGuard: self-hosted TACACS+, RADIUS, NCM backup and Cisco security auditing. Free for 5 devices; introductory plans start at $99/year."
 permalink: /
 ---
 
@@ -11,7 +11,7 @@ NetOpsGuard (previously **NetworkAAA**) is an **open-source, self-hosted network
 
 ![NetOpsGuard web dashboard showing network operations and TACACS+ management](https://github.com/user-attachments/assets/60af06ac-6017-447e-bd37-69bb27d9c427)
 
-**Get started at no cost:** The Community edition supports **up to five managed devices** with the currently available feature set. Larger device limits use signed licences.
+**Get started at no cost:** The Community edition supports **up to five managed devices** with the currently available feature set. Introductory annual licences start at **US$99 for 15 devices**, with signed licences for larger networks. [See plans and pricing]({{ '/pricing/' | relative_url }}).
 
 [Install NetOpsGuard]({{ '/guides/getting-started/' | relative_url }}) · [Explore the source on GitHub](https://github.com/jafartavana01/NetOpsGuard)
 
@@ -25,6 +25,18 @@ NetOpsGuard (previously **NetworkAAA**) is an **open-source, self-hosted network
 | **Network configuration management (NCM)** | Archive device configurations over SSH, compare versions and baselines, inspect drift, and review change workflows. |
 | **Cisco security auditing** | Review security findings, compliance-oriented views, and reports for supported Cisco IOS/IOS-XE devices. |
 | **Network Operations** | Execute authorized SSH command jobs and reusable command templates across network devices. |
+
+## Affordable network AAA, NCM and security operations
+
+| NetOpsGuard edition | Device limit | Introductory annual licence |
+| --- | ---: | ---: |
+| Community | 5 | **Free** |
+| Starter | 15 | **US$99** |
+| Professional | 50 | **US$299** |
+| Business | 100 | **US$599** |
+| Enterprise | 300 | **US$1,299** |
+
+For perspective, ManageEngine's dedicated **Network Configuration Manager Professional** annual subscription lists **US$958 for 50 devices**, while NetOpsGuard's 50-device Professional licence is proposed at **US$299/year** and includes its currently available AAA and network operations modules. Product capabilities and support offerings differ; this is **not a like-for-like feature comparison**. [See the official vendor source](https://store.manageengine.com/network-configuration-manager/index.html) (checked 13 October 2026) and [our detailed comparison]({{ '/pricing/' | relative_url }}). All NetOpsGuard prices are introductory and subject to confirmation.
 
 ## Start with the workflow you need
 
