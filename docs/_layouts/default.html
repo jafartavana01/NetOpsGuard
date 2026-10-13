@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {% assign meta_title = page.title | default: site.title %}
+  {% assign meta_description = page.description | default: site.description %}
+  <title>{% if page.url == "/" %}{{ site.title | escape }} — Network AAA &amp; Security Operations{% else %}{{ meta_title | escape }} | {{ site.title | escape }}{% endif %}</title>
+  <meta name="description" content="{{ meta_description | strip_html | strip_newlines | escape }}">
+  <link rel="canonical" href="{{ page.url | absolute_url }}">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="NetOpsGuard">
+  <meta property="og:title" content="{{ meta_title | escape }}">
+  <meta property="og:description" content="{{ meta_description | strip_html | strip_newlines | escape }}">
+  <meta property="og:url" content="{{ page.url | absolute_url }}">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="{{ meta_title | escape }}">
+  <meta name="twitter:description" content="{{ meta_description | strip_html | strip_newlines | escape }}">
+  <link rel="icon" type="image/svg+xml" href="https://raw.githubusercontent.com/jafartavana01/NetOpsGuard/main/app/static/favicon.svg">
+  <link rel="stylesheet" href="{{ '/assets/site.css' | relative_url }}">
+  {% if page.url == "/" %}
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "NetOpsGuard",
+    "url": "https://github.com/jafartavana01/NetOpsGuard",
+    "applicationCategory": "NetworkApplication",
+    "operatingSystem": "Ubuntu Server",
+    "description": "Self-hosted TACACS+ AAA and network operations platform with Cisco command authorization, Active Directory integration, configuration backups, and security auditing.",
+    "license": "https://www.apache.org/licenses/LICENSE-2.0",
+    "isAccessibleForFree": true,
+    "softwareRequirements": "Ubuntu Server 22.04, 24.04 or 26.04 LTS",
+    "codeRepository": "https://github.com/jafartavana01/NetOpsGuard",
+    "author": {"@type": "Person", "name": "Jafar Tavana"}
+  }
+  </script>
+  {% endif %}
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <a class="brand" href="{{ '/' | relative_url }}" aria-label="NetOpsGuard homepage">NetOps<span>Guard</span></a>
+      <nav class="nav" aria-label="Main navigation">
+        <a href="{{ '/guides/getting-started/' | relative_url }}">Get started</a>
+        <a href="{{ '/guides/tacacs-command-authorization/' | relative_url }}">TACACS+</a>
+        <a href="{{ '/guides/network-configuration-backup/' | relative_url }}">NCM</a>
+        <a href="{{ '/faq/' | relative_url }}">FAQ</a>
+        <a class="nav-github" href="https://github.com/jafartavana01/NetOpsGuard">GitHub ↗</a>
+      </nav>
+    </div>
+  </header>
+  <main class="container content" id="main">{{ content }}</main>
+  <footer class="footer">
+    <div class="container footer-inner">
+      <span>NetOpsGuard — Network access &amp; infrastructure operations</span>
+      <span><a href="https://github.com/jafartavana01/NetOpsGuard">Source code</a> · <a href="https://github.com/jafartavana01/NetOpsGuard/security">Security</a> · <a href="https://github.com/jafartavana01/NetOpsGuard/issues">Support</a></span>
+    </div>
+  </footer>
+</body>
+</html>
