@@ -1,27 +1,29 @@
 {% extends "app_shell.html" %}
 {% import "partials/icons.html" as icons %}
 {% block title %}Active Directory — NetOpsGuard{% endblock %}
-{% block breadcrumb %}Platform / Active Directory{% endblock %}
+{% block breadcrumb %}System / Active Directory{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content admin-workspace">
+  {% include "partials/admin_workspace.html" %}
   <div class="content-head">
-    <h1>Active Directory</h1>
+    <h1>Active Directory / LDAP</h1>
     <p class="content-sub">Configures tac_plus-ng's MAVIS backend to authenticate TACACS+ users against Active Directory, instead of (or alongside) local passwords.</p>
   </div>
 
-  <div class="panel panel-wide" style="margin-bottom:20px;border-color:var(--red);">
-    <div class="panel-body" style="font-size:12px;color:var(--red);">
-      ⚠ "Test Connection" below checks that <em>this platform</em> can reach and bind to AD with these settings — a real, direct LDAP connection. It does <strong>not</strong> by itself prove that tac_plus-ng's own separate MAVIS integration is working — that only takes effect once you Apply the configuration, and should be verified with a real test login afterward.
+  <div class="panel panel-wide" style="margin-bottom:20px;border-color:var(--amber);">
+    <div class="panel-body" style="font-size:12px;color:var(--amber);">
+      Test Connection checks the form values using the platform LDAP client. It does not verify native MAVIS login or server certificate trust. Save, review <a href="/tacacs/config">AAA Configuration</a>, then test a real login after Apply.
     </div>
   </div>
 
   <div class="panel panel-wide" id="ad-status-summary" style="margin-bottom:20px;">
     <div class="panel-head"><span class="rail rail-dim" id="ad-status-rail"></span>Connection Status</div>
     <div class="panel-body mono" id="ad-status-body">
-      <div class="readout"><span class="readout-k">status</span><span class="readout-v" id="ad-status-text">Not configured</span></div>
+      <div class="readout"><span class="readout-k">status</span><span class="readout-v" id="ad-status-text">Unknown — settings not loaded</span></div>
       <div class="readout"><span class="readout-k">directory</span><span class="readout-v" id="ad-status-domain">—</span></div>
       <div class="readout"><span class="readout-k">protocol</span><span class="readout-v" id="ad-status-protocol">—</span></div>
+      <div class="readout"><span class="readout-k">last successful check (this visit)</span><span class="readout-v" id="ad-checked-at">Not tested</span></div>
       <div class="readout"><span class="readout-k">server</span><span class="readout-v" id="ad-status-server">—</span></div>
     </div>
   </div>
@@ -47,33 +49,32 @@
 
     <div class="gated-config" id="ad-config" hidden>
 
-    <label class="field">
+    <div class="admin-identity-grid">
+<div><label class="field">
       <span class="field-label">Domain name</span>
       <div class="field-icon-wrap">
         <span class="field-icon">{{ icons.icon('network', 14) }}</span>
         <input type="text" id="ad-domain" placeholder="corp.example.com">
       </div>
     </label>
-    <div class="field-hint" style="margin-bottom:14px;">Also used to fill in the server address and search base below — override either one in Advanced if your environment needs something different.</div>
-
-    <label class="field">
-      <span class="field-label">Username</span>
+    <div class="field-hint" style="margin-bottom:14px;">Fills server and search-base defaults. Advanced settings retain explicit overrides.</div></div>
+<div><label class="field">
+      <span class="field-label">Bind identity</span>
       <div class="field-icon-wrap">
         <span class="field-icon">{{ icons.icon('user', 14) }}</span>
         <input type="text" id="ad-username" placeholder="svc_tacacs">
       </div>
     </label>
-    <div class="field-hint" style="margin-bottom:14px;">A service account with permission to read users and groups — just the name is fine (e.g. "svc_tacacs"); the domain above is appended automatically. A full UPN (name@domain) also works if you type one directly.</div>
-
-    <label class="field">
-      <span class="field-label">Password</span>
+    <div class="field-hint" style="margin-bottom:14px;">Read-only service account. Enter a full UPN, DOMAIN\user, or distinguished name; a bare username uses the domain above.</div></div>
+<div><label class="field">
+      <span class="field-label">Bind password</span>
       <div class="field-icon-wrap">
         <span class="field-icon">{{ icons.icon('lock', 14) }}</span>
         <input type="password" id="ad-bind-password" placeholder="" autocomplete="new-password">
       </div>
     </label>
-    <div class="field-hint" style="margin-bottom:18px;" id="ad-password-hint">Leave blank to keep the current password.</div>
-
+    <div class="field-hint" style="margin-bottom:18px;" id="ad-password-hint">Leave blank to keep the current password.</div></div>
+    </div>
     <button type="button" class="btn-ghost btn-small" id="ad-advanced-toggle" style="width:auto;margin-bottom:14px;">▸ Advanced settings</button>
 
     <div id="ad-advanced-section" hidden style="margin-bottom:18px;padding:14px;border:1px solid var(--line);border-radius:var(--radius);">
@@ -97,7 +98,7 @@
           <option value="none">None — plain, unencrypted LDAP</option>
         </select>
       </label>
-      <div class="field-hint" style="margin-bottom:16px;">These are two genuinely different mechanisms, not interchangeable settings for the same thing — if one fails to connect, the other is a real, separate thing to try, not just a retry. Both still depend on your domain controller having a working TLS/certificate setup at all; if neither connects, that's usually the underlying cause. "None" sends credentials unencrypted and should only be used if your directory genuinely doesn't support either.</div>
+      <div class="field-hint" style="margin-bottom:16px;">LDAPS encrypts the connection from the start. StartTLS upgrades before binding. Plain LDAP sends credentials unencrypted. The current platform LDAP client does not verify the server certificate; a successful test is not certificate-trust verification.</div>
 
       <label class="field">
         <span class="field-label">Search base</span>
@@ -119,7 +120,7 @@
           <span>Use memberOf for group lookup</span>
         </label>
       </div>
-      <div class="field-hint">AD group membership maps into the same group-matching policies already use — a user's AD groups (optionally filtered to this prefix) become available as User Group conditions once the config is applied. Leave this blank to report every group unfiltered — confirmed via a real, live test that this is genuinely required for any group information to be returned at all, not merely optional filtering.</div>
+      <div class="field-hint">Directory membership remains subject to the existing group authority and binding rules. Review bindings in <a href="/tacacs/groups">Groups</a> and browse/import users in <a href="/tacacs/users">AAA Users</a>. A connection test does not establish policy eligibility.</div>
     </div>
 
     <div id="ad-form-error" class="form-error" role="alert" hidden></div>
@@ -139,6 +140,7 @@
     <div class="modal-actions" id="ad-disabled-actions" style="justify-content:flex-start;">
       <button type="submit" class="btn-primary btn-with-icon" style="width:auto;">{{ icons.icon('check', 16) }}Save Settings</button>
     </div>
+  <button type="button" class="btn-ghost" id="ad-discard">Discard changes</button>
   </form>
 
   <div class="content-head" style="margin-top:36px;">
@@ -146,7 +148,8 @@
     <p class="content-sub">Tests the currently saved settings on demand.</p>
   </div>
   <div id="ad-health-panel" class="panel panel-wide">
-    <div class="panel-body" id="ad-health-body">
+    <div class="panel-body">
+      <p id="ad-health-body" role="status">Saved connection has not been tested during this visit.</p>
       <button type="button" class="btn-secondary btn-small" id="ad-health-check-btn" style="width:auto;">Run health check</button>
     </div>
   </div>
@@ -155,6 +158,8 @@
 
 {% block view_scripts %}
 <script>
+(() => {
+  const ui = AdminUI.view(), document = ui.document, $ = ui.$;
   function escapeHtml(s) {
     // Escapes quotes as well as angle brackets, so the result is safe
     // inside an HTML ATTRIBUTE and not only in text position. The
@@ -169,6 +174,8 @@
       .replace(/'/g, '&#39;');
   }
 
+  let settingsGeneration=0;
+  let ready=false; ui.watch('ad-form');
   // ---------- Domain-derived defaults ----------
   // ---- Feature gate ------------------------------------------------
   // The configuration below is meaningless until AD is enabled, so it
@@ -238,7 +245,7 @@
     // format (DOMAIN\user) -- either way, the admin typed a complete
     // identity, so use it exactly as typed rather than appending the
     // domain again, which would silently produce a malformed value.
-    if (username.includes('@') || username.includes('\\')) return username;
+    if (username.includes('@') || username.includes('\\') || username.includes('=')) return username;
     return domain ? `${username}@${domain}` : username;
   }
 
@@ -249,11 +256,8 @@
   });
 
   async function loadSettings() {
-    const res = await AAAPlatform.authedFetch('/api/ad-settings');
-    if (res.status === 401) { window.location.href = '/login'; return; }
-    if (!res.ok) return;
-    const s = await res.json();
-
+    const s = await ui.request('/api/ad-settings');
+    settingsGeneration++;
     document.getElementById('ad-enabled').checked = s.enabled;
     syncGate();
     document.getElementById('ad-host').value = s.host || '';
@@ -276,23 +280,11 @@
     // below only when enabled, never faked here.
     document.getElementById('ad-status-domain').textContent = searchBaseToDomain(s.search_base) || '—';
     document.getElementById('ad-status-protocol').textContent = s.use_starttls ? 'LDAP + StartTLS' : (s.use_tls ? 'LDAPS' : 'LDAP (unencrypted)');
-    document.getElementById('ad-status-server').textContent = s.host ? `${s.host}:${s.port || (s.use_tls ? 663 : 389)}` : '—';
-    if (!s.enabled) {
-      document.getElementById('ad-status-text').textContent = 'Not configured';
-      document.getElementById('ad-status-rail').className = 'rail rail-dim';
-    } else {
-      document.getElementById('ad-status-text').textContent = 'Configured — testing…';
-      document.getElementById('ad-status-rail').className = 'rail rail-amber';
-      // Auto-run the SAME health check the "Run health check" button
-      // below triggers manually -- only when AD is actually enabled,
-      // so a never-configured environment doesn't land on this page
-      // to an immediate, alarming "failed" reading for settings
-      // nobody has filled in yet. Fire-and-forget: runHealthCheck()
-      // itself updates both this summary and the panel further down
-      // once it resolves.
-      runHealthCheck();
-    }
-
+    document.getElementById('ad-status-server').textContent = s.host ? `${s.host}:${s.port || (s.use_tls ? 636 : 389)}` : '—';
+    $('ad-status-text').textContent=s.enabled?'Configured — not tested':'Disabled in saved settings';
+    $('ad-status-rail').className='rail rail-dim';
+    $('ad-health-body').textContent='Saved connection has not been tested since loading settings.';
+    $('ad-checked-at').textContent='Not tested';
     // Best-effort reconstruction of the simple fields from what's
     // actually stored, so returning to this page shows a coherent
     // picture rather than blank simple fields next to filled-in
@@ -318,7 +310,7 @@
     const encryptionMode = document.getElementById('ad-encryption-mode').value;
     return {
       host: document.getElementById('ad-host').value,
-      port: parseInt(document.getElementById('ad-port').value, 10) || 636,
+      port: Number(document.getElementById('ad-port').value),
       use_tls: encryptionMode === 'ldaps',
       use_starttls: encryptionMode === 'starttls',
       bind_dn: computeBindDn(),
@@ -327,86 +319,49 @@
     };
   }
 
-  function renderTestResult(elBody, elBox, result) {
-    elBox.hidden = false;
-    elBox.style.borderColor = result.success ? 'var(--signal)' : 'var(--red)';
-    elBody.innerHTML = `<span style="color:${result.success ? 'var(--signal)' : 'var(--red)'};">${result.success ? '✓' : '✗'}</span> ${escapeHtml(result.message)}`;
+
+  function validateForm() {
+    const v=currentFormValues();
+    if(!Number.isInteger(v.port)||v.port<1||v.port>65535)throw Error('Port must be between 1 and 65535.');
+    if($('ad-enabled').checked&&(!v.host.trim()||!v.bind_dn.trim()||!v.search_base.trim()))throw Error('Server, bind identity and search base are required when enabled.');
+    return v;
   }
-
-  document.getElementById('ad-test-btn').addEventListener('click', async () => {
-    const btn = document.getElementById('ad-test-btn');
-    btn.disabled = true;
-    btn.textContent = 'Testing…';
-    const res = await AAAPlatform.authedFetch('/api/ad-settings/test', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(currentFormValues()),
-    });
-    btn.disabled = false;
-    btn.textContent = 'Test Connection';
-    const resultBox = document.getElementById('ad-test-result');
-    const resultBody = document.getElementById('ad-test-result-body');
-    if (!res.ok) {
-      renderTestResult(resultBody, resultBox, { success: false, message: 'Could not run the test.' });
-      return;
-    }
-    const result = await res.json();
-    renderTestResult(resultBody, resultBox, result);
+  $('ad-test-btn').addEventListener('click',()=>{
+    if(!ready)return;
+    ui.run('ad-test-btn','ad-form-error',async()=>{
+      const result=await ui.request('/api/ad-settings/test',ui.json('POST',validateForm()));
+      $('ad-test-result').hidden=false;
+      $('ad-test-result-body').textContent=(result.success?'Form connection test succeeded: ':'Form connection test failed: ')+AdminUI.redact(result.message)+' — '+new Date().toLocaleString()+'. These values have not been saved by this test.';
+    },$('ad-form'));
   });
-
-  document.getElementById('ad-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const errorBox = document.getElementById('ad-form-error');
-    errorBox.hidden = true;
-
-    const payload = {
-      enabled: document.getElementById('ad-enabled').checked,
-      ...currentFormValues(),
-      user_filter_template: document.getElementById('ad-user-filter').value,
-      group_prefix: document.getElementById('ad-group-prefix').value || null,
-      use_memberof: document.getElementById('ad-use-memberof').checked,
-    };
-
-    const res = await AAAPlatform.authedFetch('/api/ad-settings', {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
-    });
-
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      let msg = 'Could not save settings.';
-      if (body.detail && typeof body.detail === 'string') msg = body.detail;
-      else if (Array.isArray(body.detail) && body.detail[0] && body.detail[0].msg) msg = body.detail[0].msg;
-      errorBox.textContent = msg;
-      errorBox.hidden = false;
-      return;
-    }
-
-    document.getElementById('ad-bind-password').value = '';
-    AAAPlatform.toast('AD settings saved. Apply the configuration from the Config page for this to take effect.');
-    await loadSettings();
+  $('ad-form').addEventListener('submit',e=>{
+    e.preventDefault();if(!ready)return;
+    ui.run(e.submitter,'ad-form-error',async()=>{
+      const payload={enabled:$('ad-enabled').checked,...validateForm(),user_filter_template:$('ad-user-filter').value,group_prefix:$('ad-group-prefix').value||null,use_memberof:$('ad-use-memberof').checked};
+      if(!payload.use_tls&&!payload.use_starttls&&payload.enabled&&!confirm('Save plain LDAP settings? Bind credentials will be sent without transport encryption.'))return;
+      await ui.request('/api/ad-settings',ui.json('PUT',payload));
+      $('ad-bind-password').value='';await loadSettings();ui.clean('ad-form','Saved. Review and Apply AAA configuration to activate.');
+      $('ad-test-result').hidden=true;
+    },$('ad-form'));
   });
-
-  async function runHealthCheck() {
-    const body = document.getElementById('ad-health-body');
-    body.innerHTML = 'Checking…';
-    const res = await AAAPlatform.authedFetch('/api/ad-settings/health');
-    if (!res.ok) {
-      body.innerHTML = '<span style="color:var(--red);">Could not run the health check.</span> <button type="button" class="btn-secondary btn-small" id="ad-health-retry-btn" style="width:auto;">Run health check</button>';
-      document.getElementById('ad-health-retry-btn').addEventListener('click', runHealthCheck);
-      document.getElementById('ad-status-text').textContent = 'Health check failed';
-      document.getElementById('ad-status-rail').className = 'rail rail-red';
-      return;
-    }
-    const result = await res.json();
-    body.innerHTML = `<span style="color:${result.success ? 'var(--signal)' : 'var(--red)'};">${result.success ? '✓' : '✗'}</span> ${escapeHtml(result.message)}
-      <div style="margin-top:10px;"><button type="button" class="btn-secondary btn-small" id="ad-health-retry-btn" style="width:auto;">Run again</button></div>`;
-    document.getElementById('ad-health-retry-btn').addEventListener('click', runHealthCheck);
-    // Same result also drives the top-of-page summary -- one source
-    // of truth for "current known status," whether this ran from the
-    // manual button below or the automatic check on page load.
-    document.getElementById('ad-status-text').textContent = result.success ? 'Connected' : 'Connection failed';
-    document.getElementById('ad-status-rail').className = `rail ${result.success ? 'rail-signal' : 'rail-red'}`;
-  }
-  document.getElementById('ad-health-check-btn').addEventListener('click', runHealthCheck);
-
-  loadSettings();
+  $('ad-health-check-btn').addEventListener('click',()=>ui.run('ad-health-check-btn','ad-health-body',async()=>{
+    const generation=settingsGeneration;
+    $('ad-status-text').textContent='Checking saved connection…';
+    try {
+      const result=await ui.request('/api/ad-settings/health');
+      if(generation!==settingsGeneration)return;
+      $('ad-status-text').textContent=result.success?'Connected at last check':'Connection check failed';
+      $('ad-status-rail').className='rail '+(result.success?'rail-signal':'rail-red');
+      if(result.success)$('ad-checked-at').textContent=new Date().toLocaleString();
+      ui.error('ad-health-body',result.message+' — '+new Date().toLocaleString()+' (saved settings)');
+    } catch(e){if(generation!==settingsGeneration)return;$('ad-status-text').textContent='Unknown — check unavailable';$('ad-status-rail').className='rail rail-dim';throw e;}
+  }));
+  $('ad-discard').addEventListener('click',()=>{
+    if(ui.dirty('ad-form')&&!confirm('Discard unsaved directory settings?'))return;
+    ui.run('ad-discard','ad-form-error',async()=>{await loadSettings();$('ad-bind-password').value='';$('ad-test-result').hidden=true;ui.clean('ad-form');},$('ad-form'));
+  });
+  const inputs=[...$('ad-form').querySelectorAll('input,select,button')];inputs.forEach(e=>e.disabled=true);
+  loadSettings().then(()=>{ready=true;inputs.forEach(e=>e.disabled=false);}).catch(e=>ui.notice(e.message));
+})();
 </script>
 {% endblock %}

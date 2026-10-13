@@ -4,7 +4,8 @@
 {% block breadcrumb %}System / Modules{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content admin-workspace">
+  {% include "partials/admin_workspace.html" %}
   <div class="content-head">
     <h1>Modules</h1>
     <p class="content-sub">Which subsystems are installed and enabled on this platform.</p>
@@ -25,6 +26,7 @@
 {% block view_scripts %}
 <script>
 (() => {
+  const ui=AdminUI.view(),document=ui.document,$=ui.$;
   const ICON_GRID = '{{ icons.icon("layout-dashboard", 16) }}';
   const ICON_CHECK = '{{ icons.icon("check", 16) }}';
   const ICON_LOCK = '{{ icons.icon("lock", 16) }}';
@@ -37,7 +39,7 @@
     const mandatory = modules.filter((m) => m.mandatory).length;
     document.getElementById('modules-kpis').innerHTML = [
       AAAPlatform.kpiCard({ icon: ICON_GRID, label: 'Installed Modules', value: modules.length }),
-      AAAPlatform.kpiCard({ icon: ICON_CHECK, label: 'Enabled', value: enabled, state: 'is-signal' }),
+      AAAPlatform.kpiCard({ icon: ICON_CHECK, label: 'Configured enabled', value: enabled, state: 'is-signal' }),
       AAAPlatform.kpiCard({ icon: ICON_LOCK, label: 'Required', value: mandatory,
                             sub: 'cannot be disabled' }),
     ].join('');
@@ -54,7 +56,7 @@
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">' +
       '<span style="font-size:14px;color:var(--text-primary);">' + esc(m.name) + '</span>' +
       '<span class="badge sec-sev-badge ' + (m.enabled ? 'is-signal' : '') + '">' +
-      (m.enabled ? 'Enabled' : 'Disabled') + '</span>' +
+      (m.enabled ? 'Configured enabled' : 'Configured disabled') + '</span>' +
       (m.mandatory ? '<span class="badge sec-sev-badge">Required</span>' : '') +
       '</div>' +
       '<div class="content-sub" style="margin-bottom:8px;">' + esc(m.description) + '</div>' +
@@ -77,47 +79,23 @@
     const key = box.dataset.key;
     const wanted = box.checked;
 
-    const res = await AAAPlatform.authedFetch('/api/modules/' + encodeURIComponent(key), {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled: wanted }),
-    });
-    if (!res.ok) {
-      // Put the switch back where it was: leaving it showing a state
-      // the server rejected would misrepresent what is actually
-      // configured.
-      box.checked = !wanted;
-      const b = await res.json().catch(() => ({}));
-      AAAPlatform.toast(
-        (b.detail && typeof b.detail === 'string') ? b.detail : 'Could not change that module.',
-        'error');
-      return;
-    }
-    const updated = await res.json();
-    modules = modules.map((m) => (m.key === updated.key ? updated : m));
-    renderKpis();
-    render();
-    AAAPlatform.toast(
-      (updated.enabled ? 'Enabled ' : 'Disabled ') + updated.name +
-      ' — restart the service for this to take effect.');
+    if(!wanted&&!confirm('Disable this module on the next management restart? Its pages and API will be unavailable; stored data remains.')){box.checked=true;return;}
+    if(box.dataset.busy)return;box.dataset.busy='true';box.disabled=true;
+    try {
+      const updated=await ui.request('/api/modules/'+encodeURIComponent(key),ui.json('PUT',{enabled:wanted}));
+      modules=modules.map(m=>m.key===updated.key?updated:m);renderKpis();render();
+      ui.notice('Module configuration saved. Restart management explicitly from Network & TLS to activate. Current runtime state is unchanged.');
+    } catch(e){box.checked=!wanted;ui.notice(e.message);}finally{box.disabled=false;delete box.dataset.busy;}
+
   });
 
   async function load() {
-    let res;
-    try { res = await AAAPlatform.authedFetch('/api/modules'); } catch (e) { res = null; }
-    if (!res || !res.ok) {
-      document.getElementById('modules-wrap').innerHTML =
-        '<div class="empty-state">' + (res && res.status === 403
-          ? 'Module management is restricted to superadministrators.'
-          : 'Could not load modules.') + '</div>';
-      document.getElementById('modules-kpis').innerHTML = '';
-      return;
-    }
-    modules = await res.json();
+    modules=await ui.request('/api/modules');
     renderKpis();
     render();
   }
 
-  load();
+  load().catch(e=>{ui.error('modules-wrap',e.message);});
 })();
 </script>
 {% endblock %}

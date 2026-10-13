@@ -1,10 +1,11 @@
 {% extends "app_shell.html" %}
 {% import "partials/icons.html" as icons %}
 {% block title %}Admin Roles — NetOpsGuard{% endblock %}
-{% block breadcrumb %}Platform / Admin Roles{% endblock %}
+{% block breadcrumb %}System / Admin Roles{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content admin-workspace">
+  {% include "partials/admin_workspace.html" %}
   <div class="content-head">
     <h1>Admin Roles</h1>
     <p class="content-sub">Granular permission sets for platform administrators. A Superadmin always has full access regardless of role. An account with no role assigned keeps its original access — full access to everything except Platform management — unchanged from before roles existed.</p>
@@ -54,7 +55,12 @@
 
 {% block view_scripts %}
 <script>
+(() => {
+  const ui = AdminUI.view(), document = ui.document, $ = ui.$;
   let roles = [];
+  let ready = false;
+  ui.watch("role-form");
+  OpsUI.table("roles-table-wrap");
   let permissionCatalog = [];
   let currentPermissions = [];
 
@@ -88,8 +94,8 @@
         <td class="cell-mono">${r.permissions.length} permission${r.permissions.length === 1 ? '' : 's'}</td>
         <td class="cell-mono">${r.admin_count} admin${r.admin_count === 1 ? '' : 's'}</td>
         <td class="cell-actions">
-          <button class="btn-secondary btn-small" data-edit="${r.id}">Edit</button>
-          <button class="btn-danger btn-small" data-delete="${r.id}">Delete</button>
+          <button class="btn-secondary btn-small" data-edit="${escapeHtml(r.id)}">Edit</button>
+          <button class="btn-danger btn-small" data-delete="${escapeHtml(r.id)}">Delete</button>
         </td>
       </tr>
     `).join('');
@@ -110,19 +116,12 @@
   }
 
   async function loadRoles() {
-    const res = await AAAPlatform.authedFetch('/api/admin-roles');
-    if (res.status === 401) { window.location.href = '/login'; return; }
-    if (res.status === 403) {
-      document.getElementById('roles-table-wrap').innerHTML = '<div class="empty-state">Superadmin privileges required.</div>';
-      return;
-    }
-    roles = await res.json();
+    roles = await ui.request('/api/admin-roles');
     renderTable();
   }
 
   async function loadPermissionCatalog() {
-    const res = await AAAPlatform.authedFetch('/api/admin-roles/permission-catalog');
-    if (res.ok) permissionCatalog = await res.json();
+    permissionCatalog = await ui.request('/api/admin-roles/permission-catalog');
   }
 
   function renderPermissionChecklist() {
@@ -157,6 +156,8 @@
   }
 
   function openModal(role) {
+    if (!ready) { ui.notice("Required access information is unavailable. Reload before editing."); return; }
+    ui.clean("role-form");
     document.getElementById('role-form-error').hidden = true;
     document.getElementById('role-form').reset();
 
@@ -176,7 +177,7 @@
   }
 
   function closeModal() {
-    document.getElementById('role-modal-backdrop').hidden = true;
+    ui.close('role-modal-backdrop');
   }
 
   document.getElementById('add-role-btn').addEventListener('click', () => openModal(null));
@@ -201,44 +202,36 @@
     const url = id ? `/api/admin-roles/${id}` : '/api/admin-roles';
     const method = id ? 'PUT' : 'POST';
 
-    const res = await AAAPlatform.authedFetch(url, {
-      method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
-    });
+    const previous = roles.find(r => r.id === id);
+    if (previous && previous.admin_count && JSON.stringify([...previous.permissions].sort()) !== JSON.stringify([...payload.permissions].sort()) && !confirm('Change permissions for all ' + previous.admin_count + ' administrator(s) assigned to this role?')) return;
+    await ui.run(e.submitter, 'role-form-error', async () => {
+      await ui.request(url, ui.json(method, payload));
+      ui.clean('role-form');
+      $('role-modal-backdrop').hidden = true;
 
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      let msg = 'Could not save role.';
-      if (body.detail && typeof body.detail === 'string') msg = body.detail;
-      else if (Array.isArray(body.detail) && body.detail[0] && body.detail[0].msg) msg = body.detail[0].msg;
-      errorBox.textContent = msg;
-      errorBox.hidden = false;
-      return;
-    }
-
-    closeModal();
-    AAAPlatform.toast(id ? 'Role updated.' : 'Role added.');
-    loadRoles();
+      AAAPlatform.toast('Role saved.');
+      await loadRoles();
+    }, $('role-form'));
   });
 
   async function deleteRole(id) {
     const role = roles.find(r => r.id === id);
     const usageNote = role && role.admin_count > 0
-      ? ` ${role.admin_count} admin(s) using it will fall back to full standard-admin access, not be locked out.`
+      ? ` ${role.admin_count} admin(s) using it will fall back to full standard-admin access, which can increase their privileges. Reassign affected accounts before deletion if that is not intended.`
       : '';
     if (!confirm(`Delete role "${role ? role.name : id}"?${usageNote}`)) return;
 
-    const res = await AAAPlatform.authedFetch(`/api/admin-roles/${id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      AAAPlatform.toast('Could not delete role.', 'error');
-      return;
-    }
-    AAAPlatform.toast('Role deleted.');
-    loadRoles();
+    await ui.run(document.querySelector('[data-delete="'+id+'"]'), null, async () => {
+      await ui.request(`/api/admin-roles/${id}`, {method:'DELETE'});
+      AAAPlatform.toast('Role deleted.');
+      await loadRoles();
+    });
   }
 
   (async function init() {
-    await loadPermissionCatalog();
-    await loadRoles();
+    $('add-role-btn').disabled = true;
+    try { await Promise.all([loadPermissionCatalog(), loadRoles()]);ready=true;$('add-role-btn').disabled=false; } catch(e) {ui.notice(e.message);}
   })();
+})();
 </script>
 {% endblock %}

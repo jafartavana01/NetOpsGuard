@@ -4,6 +4,22 @@
 
 Use the administrator account chosen at installation. Configure HTTPS in Platform Settings and restrict management connectivity. An account without a granular role retains broad legacy administrator permissions; assign a role to restrict it. Keep at least one recoverable superadmin account.
 
+## System & Administration workspace
+
+Use the contextual navigation to switch between Network & TLS, Administrators, Roles & permissions, AD / LDAP, Modules, License, RADIUS settings, Diagnostics, and AAA health. Existing account permissions and module availability still apply.
+
+- **Network & TLS:** Save web settings, then explicitly restart management to activate them. Changing the address, port, or HTTPS mode can interrupt access. TACACS+ port changes require AAA Configuration Apply separately. Certificate replacement writes the selected certificate/key to disk; management restart activates it. Private-key contents are not displayed.
+- **Administrators and roles:** Search loaded rows, review the role, and confirm access changes. A blank password when editing preserves the existing password. Deleting a role currently leaves its assigned accounts with full standard-admin access; reassign those accounts first if this privilege expansion is not intended.
+- **AD / LDAP:** Test Connection checks the current form values. Run health check tests saved settings. The displayed successful-check time applies only to the current page visit. Neither test proves native MAVIS authentication or authorization. Save settings, review the AAA candidate, Apply, and verify real permitted and denied logins.
+- **Modules:** The switches show saved configuration. Changes affect mounted pages/APIs after an explicit management restart; saving does not restart services.
+- **License:** Inspect actual usage and edition limits, select a license file for import, or generate a request. The request includes hashed machine identifiers and any contact/reference entered; review it before sharing.
+- **RADIUS settings:** Saved listener settings and the illustrative preview are distinct from observed listeners. Save, then review and Apply AAA configuration. A probe response, including Access-Reject, proves reachability rather than successful user authorization.
+- **Diagnostics:** Refresh service/database status or validate the candidate without applying it. Blocked, changed, unchanged, and inconclusive validation results are distinct. Configuration events are not a complete administrative audit trail. Known credential patterns are masked in displayed/copied output; this is not comprehensive backend log sanitization.
+
+Discard restores saved form values. Loading failures prevent settings from overwriting the server with defaults. A lost connection during a mutation does not prove failure or success: refresh saved state before retrying.
+
+**Directory TLS limitation:** The current platform LDAP test/browser client uses `CERT_NONE`; its successful LDAPS/StartTLS check does not validate server-certificate trust. This GUI update preserves backend behavior. Do not use that result as evidence of certificate verification; remediation and native MAVIS trust verification require separate review.
+
 ## Inventory and identity
 
 Add devices with unique addresses and their own TACACS+/RADIUS secrets. Device groups may exist empty, but a policy referencing an empty group cannot be deployed. Store SSH credentials only through the supported settings/API and review first-use host-key trust.

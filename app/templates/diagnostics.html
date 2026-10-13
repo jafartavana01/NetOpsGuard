@@ -1,14 +1,16 @@
 {% extends "app_shell.html" %}
 {% block title %}Diagnostics — NetOpsGuard{% endblock %}
-{% block breadcrumb %}TACACS+ / Diagnostics{% endblock %}
+{% block breadcrumb %}System / Diagnostics{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content admin-workspace">
+  {% include "partials/admin_workspace.html" %}
       <div class="content-head">
         <h1>Diagnostics</h1>
-        <p class="content-sub">Everything on this page reuses data the platform already tracks — nothing here is a separate source of truth from the Dashboard, Configuration, or Accounting pages.</p>
+        <p class="content-sub">Service and database checks, candidate validation, and recorded configuration events. Checks describe the time queried, not continuous monitoring.</p>
       </div>
 
+      <div class="admin-actions"><button id="status-refresh" class="btn-secondary btn-small">Refresh system status</button><a href="/tacacs/config">Review AAA configuration</a><span id="status-checked" class="admin-note">Not checked</span></div>
       <section class="panel-grid" id="status-grid">
         <div class="panel"><div class="panel-loading">Loading…</div></div>
         <div class="panel"><div class="panel-loading">Loading…</div></div>
@@ -27,7 +29,7 @@
 
       <div class="content-head">
         <h2>Recent Configuration Events</h2>
-        <p class="content-sub">Every apply, validation, and automatic rollback this platform has recorded.</p>
+        <p class="content-sub">Latest 50 recorded configuration and installation events. This is not a complete administrative audit log.</p>
       </div>
       <div id="audit-events-wrap">
         <div class="empty-state">Loading…</div>
@@ -35,7 +37,7 @@
 
       <div class="content-head">
         <h2>Service Logs</h2>
-        <p class="content-sub">Raw journal output for either service this platform manages.</p>
+        <p class="content-sub">Journal tail from the selected managed service. Recognized credential fields are masked in this display; review operational output before sharing.</p>
       </div>
       <div class="panel panel-wide">
         <div class="panel-body">
@@ -55,7 +57,7 @@
 
       <div class="content-head">
         <h2>Authentication Log</h2>
-        <p class="content-sub">Raw tail of tac_plus-ng's access log. Type a term below to filter it yourself — this platform doesn't claim to know what "failure" looks like in an unconfirmed log format.</p>
+        <p class="content-sub">Access-log tail with server-side text filtering. No authentication success rate is inferred from unstructured text.</p>
       </div>
       <div class="panel panel-wide">
         <div class="panel-body">
@@ -72,7 +74,7 @@
 
       <div class="content-head">
         <h2>Authorization Log</h2>
-        <p class="content-sub">Raw tail of tac_plus-ng's authorization log — permit/deny decisions from the policy engine.</p>
+        <p class="content-sub">Authorization-log tail with server-side text filtering.</p>
       </div>
       <div class="panel panel-wide">
         <div class="panel-body">
@@ -91,163 +93,50 @@
 
 {% block view_scripts %}
 <script>
-  function escapeHtml(s) {
-    // Escapes quotes as well as angle brackets, so the result is safe
-    // inside an HTML ATTRIBUTE and not only in text position. The
-    // previous textContent/innerHTML round-trip left quotes intact,
-    // which let a value like `" onerror="alert(1)` close an attribute
-    // and add a new one.
-    return String(s == null ? '' : s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-
-  function statusColor(state) {
-    if (state === 'active' || state === 'connected') return 'signal';
-    if (state === 'activating' || state === 'reloading') return 'amber';
-    return 'red';
-  }
-
-  function renderReadout(label, value) {
-    return `<div class="readout"><span class="readout-k">${label}</span><span class="readout-v">${value}</span></div>`;
-  }
-
-  async function loadOverview() {
-    const grid = document.getElementById('status-grid');
+(() => {
+  const ui=AdminUI.view(),document=ui.document,$=ui.$,esc=AdminUI.esc;
+  OpsUI.table('audit-events-wrap');
+  const readout=(k,v)=>'<div class="readout"><span class="readout-k">'+esc(k)+'</span><span class="readout-v">'+esc(v??'Unknown')+'</span></div>';
+  const color=s=>['active','connected'].includes(s)?'signal':['activating','reloading'].includes(s)?'amber':['failed','inactive','unavailable'].includes(s)?'red':'dim';
+  async function overview(){
     try {
-      const res = await AAAPlatform.authedFetch('/api/diagnostics/overview');
-      if (res.status === 401) { window.location.href = '/login'; return; }
-      const data = await res.json();
-
-      const mgmt = data.services['aaa-platform.service'] || {};
-      const tac = data.services['tac-plus-ng.service'] || {};
-      const b = data.build_info || {};
-
-      grid.innerHTML = `
-        <div class="panel">
-          <div class="panel-head"><span class="rail rail-${statusColor(mgmt.active_state)}"></span>Management API</div>
-          <div class="panel-body mono">
-            ${renderReadout('state', mgmt.active_state || 'unknown')}
-            ${renderReadout('enabled', mgmt.enabled ?? 'unknown')}
-          </div>
-        </div>
-        <div class="panel">
-          <div class="panel-head"><span class="rail rail-${statusColor(tac.active_state)}"></span>tac_plus-ng</div>
-          <div class="panel-body mono">
-            ${renderReadout('state', tac.active_state || 'unknown')}
-            ${renderReadout('enabled', tac.enabled ?? 'unknown')}
-          </div>
-        </div>
-        <div class="panel panel-wide" style="grid-column: 1 / -1;">
-          <div class="panel-head"><span class="rail rail-dim"></span>Build Information</div>
-          <div class="panel-body mono build-grid">
-            ${renderReadout('tac_plus-ng version', b.tac_plus_ng_version_string || 'unknown')}
-            ${renderReadout('commit', (b.commit || '').slice(0, 12) || 'unknown')}
-            ${renderReadout('build profile', b.build_profile || 'unknown')}
-            ${renderReadout('ubuntu', b.ubuntu_version || 'unknown')}
-          </div>
-        </div>
-      `;
-    } catch (err) {
-      grid.innerHTML = '<div class="panel"><div class="panel-body">Could not reach the management API.</div></div>';
-    }
+      const d=await ui.request('/api/system/status'),b=d.build_info||{};
+      const panels=Object.entries({'aaa-platform.service':'Management service','tac-plus-ng.service':'AAA service'}).map(([unit,name])=>{
+        const s=d.services[unit]||{};return '<div class="panel"><div class="panel-head"><span class="rail rail-'+color(s.active_state)+'"></span>'+name+'</div><div class="panel-body">'+readout('State',s.active_state||'Unknown')+readout('Substate',s.sub_state)+readout('Enabled',s.enabled)+ (s.error?readout('Check',s.error):'')+'</div></div>';
+      });
+      panels.push('<div class="panel"><div class="panel-head"><span class="rail rail-'+color(d.database)+'"></span>Database</div><div class="panel-body">'+readout('Connectivity',d.database)+'</div></div>');
+      panels.push('<div class="panel"><div class="panel-head">System information</div><div class="panel-body">'+readout('Operating system',d.os)+readout('Build metadata',b.status)+readout('Daemon build profile',b.build_profile)+readout('Build date',b.build_date_utc)+readout('Enabled build features',(b.features_detected_enabled||[]).join(', ')||'Not recorded')+'</div></div>');
+      $('status-grid').innerHTML=panels.join('');$('status-checked').textContent=d.checked_at?'Checked '+new Date(d.checked_at).toLocaleString():'Check time not recorded';
+    }catch(e){$('status-checked').textContent='Unknown — check unavailable';ui.error('status-grid',e.message);}
   }
-
-  document.getElementById('validate-btn').addEventListener('click', async () => {
-    const box = document.getElementById('validate-result');
-    box.innerHTML = '<div class="content-sub">Validating…</div>';
-
-    const res = await AAAPlatform.authedFetch('/api/diagnostics/validate-config', { method: 'POST' });
-    if (!res.ok) {
-      box.innerHTML = '<div class="form-error">Could not run validation.</div>';
-      return;
-    }
-    const data = await res.json();
-    const badge = data.validated
-      ? '<span class="badge badge-on">Syntax check passed</span>'
-      : data.definitively_failed
-        ? '<span class="badge badge-off">FAILED — would not be applied</span>'
-        : '<span class="badge badge-off">Inconclusive — see output below</span>';
-    const changeNote = data.would_change
-      ? '<p class="content-sub" style="margin-top:8px;">This candidate differs from what\'s currently deployed — visit Configuration to review and apply it.</p>'
-      : '<p class="content-sub" style="margin-top:8px;">This matches what\'s currently deployed. Nothing pending.</p>';
-    box.innerHTML = `${badge}${changeNote}<div class="diff-view" style="margin-top:10px;">${escapeHtml(data.output) || '(no output)'}</div>`;
-  });
-
-  async function loadAuditEvents() {
-    const wrap = document.getElementById('audit-events-wrap');
-    const res = await AAAPlatform.authedFetch('/api/diagnostics/audit-events?limit=50');
-    if (res.status === 401) { window.location.href = '/login'; return; }
-    if (!res.ok) {
-      wrap.innerHTML = '<div class="empty-state">Could not load configuration events.</div>';
-      return;
-    }
-    const data = await res.json();
-    if (data.events.length === 0) {
-      wrap.innerHTML = '<div class="empty-state">No configuration events recorded yet.</div>';
-      return;
-    }
-
-    const badgeFor = (type) => {
-      if (type.includes('rollback')) return 'badge-off';
-      if (type.includes('succeeded') || type === 'initial_install') return 'badge-on';
-      return '';
-    };
-
-    wrap.innerHTML = `<div class="version-list">${data.events.map(e => `
-      <div class="version-row">
-        <div>
-          <span class="badge ${badgeFor(e.event_type)}">${escapeHtml(e.event_type)}</span>
-          <div class="version-meta">${new Date(e.occurred_at).toLocaleString()}${e.detail ? ' · ' + escapeHtml(e.detail.slice(0, 160)) : ''}</div>
-        </div>
-      </div>
-    `).join('')}</div>`;
+  $('status-refresh').addEventListener('click',()=>ui.run('status-refresh',null,overview));
+  $('validate-btn').addEventListener('click',()=>ui.run('validate-btn',null,async()=>{
+    const box=$('validate-result');box.textContent='Validating candidate…';
+    try{
+      const d=await ui.request('/api/diagnostics/validate-config',{method:'POST'});
+      const blocked=d.applicable===false,failed=d.definitively_failed;
+      const title=blocked?'Configuration blocked':d.validated?'Syntax check passed':failed?'Validation failed':'Validation inconclusive';
+      const note=blocked?'Resolve policy scope errors before applying. Deployed configuration is unchanged.':failed?'Candidate cannot be applied. Deployed configuration is unchanged.':d.would_change?'Candidate differs from deployed configuration. Review it on Configuration.':d.validated?'Candidate matches deployed configuration. Nothing pending.':'Application readiness is not established; review the diagnostic output.';
+      box.innerHTML='<span class="badge '+(blocked||failed?'badge-off':d.validated?'badge-on':'')+'">'+title+'</span><p class="admin-note">'+note+'</p>';
+      if(d.diagnostics?.length){const list=document.createElement('ul');d.diagnostics.forEach(x=>{const item=document.createElement('li');item.textContent=AdminUI.redact([x.protocol,x.policy_name,x.reason||x.message,x.code,x.path,x.reference_id||x.object_id].filter(Boolean).join(' · '));list.append(item);});box.append(list);}
+      const out=document.createElement('pre');out.id='validation-output';out.className='diff-view';box.append(out);ui.output('validation-output',d.output||'No output');
+    }catch(e){box.textContent=AdminUI.redact(e.message);}
+  }));
+  async function events(){
+    try {const data=await ui.request('/api/diagnostics/audit-events?limit=50');
+      $('audit-events-wrap').innerHTML=data.events.length?'<table class="data-table"><thead><tr><th>Time</th><th>Event category</th><th>Recorded detail</th></tr></thead><tbody>'+data.events.map(e=>'<tr><td>'+esc(new Date(e.occurred_at).toLocaleString())+'</td><td>'+esc(e.event_type)+'</td><td><details><summary>Inspect detail</summary><pre class="diff-view">'+esc(AdminUI.redact(e.detail||'No detail recorded'))+'</pre></details></td></tr>').join('')+'</tbody></table>':'<div class="empty-state">No configuration events recorded.</div>';
+    }catch(e){ui.error('audit-events-wrap',e.message);}
   }
-
-  async function loadServiceLog() {
-    const view = document.getElementById('service-log-view');
-    const unit = document.getElementById('service-log-select').value;
-    view.textContent = 'Loading…';
-    const res = await AAAPlatform.authedFetch(`/api/diagnostics/service-log/${unit}`);
-    if (!res.ok) { view.textContent = 'Could not load service log.'; return; }
-    const data = await res.json();
-    view.textContent = data.content || '(empty)';
-  }
-
-  async function loadAccessLog() {
-    const view = document.getElementById('access-log-view');
-    const search = document.getElementById('access-log-search').value.trim();
-    view.textContent = 'Loading…';
-    const url = '/api/tacacs-logs/access' + (search ? `?search=${encodeURIComponent(search)}` : '');
-    const res = await AAAPlatform.authedFetch(url);
-    if (!res.ok) { view.textContent = 'Could not load access log.'; return; }
-    const data = await res.json();
-    view.textContent = data.content || data.note || '(empty)';
-  }
-
-  async function loadAuthzLog() {
-    const view = document.getElementById('authz-log-view');
-    const search = document.getElementById('authz-log-search').value.trim();
-    view.textContent = 'Loading…';
-    const url = '/api/tacacs-logs/authorization' + (search ? `?search=${encodeURIComponent(search)}` : '');
-    const res = await AAAPlatform.authedFetch(url);
-    if (!res.ok) { view.textContent = 'Could not load authorization log.'; return; }
-    const data = await res.json();
-    view.textContent = data.content || data.note || '(empty)';
-  }
-
-  document.getElementById('service-log-select').addEventListener('change', loadServiceLog);
-  document.getElementById('refresh-service-log-btn').addEventListener('click', loadServiceLog);
-  document.getElementById('refresh-access-log-btn').addEventListener('click', loadAccessLog);
-  document.getElementById('refresh-authz-log-btn').addEventListener('click', loadAuthzLog);
-
-  loadOverview();
-  loadAuditEvents();
-  loadServiceLog();
-  loadAccessLog();
-  loadAuthzLog();
+  const logs=[['service','service-log-view','refresh-service-log-btn'],['access','access-log-view','refresh-access-log-btn'],['authz','authz-log-view','refresh-authz-log-btn']];
+  function log(kind,id,button){return ui.run(button,null,async()=>{
+    const unit=$('service-log-select').value,search=kind==='access'?$('access-log-search').value.trim():kind==='authz'?$('authz-log-search').value.trim():'';
+    const url=kind==='service'?'/api/diagnostics/service-log/'+encodeURIComponent(unit):'/api/tacacs-logs/'+(kind==='access'?'access':'authorization')+(search?'?search='+encodeURIComponent(search):'');
+    ui.output(id,'Loading…');
+    try{const d=await ui.request(url);ui.output(id,d.content||d.note||'(empty)');}catch(e){ui.output(id,e.message);}
+  },$(button).closest('.panel-body'));}
+  logs.forEach(([kind,id,button])=>{$(button).addEventListener('click',()=>log(kind,id,button));log(kind,id,button);});
+  $('service-log-select').addEventListener('change',()=>log(...logs[0]));
+  overview();events();
+})();
 </script>
 {% endblock %}

@@ -1,0 +1,13 @@
+{% set available = namespace(paths=[]) %}
+{% for section in nav_sections %}{% for item in section.items %}{% set available.paths = available.paths + [item.path] %}{% endfor %}{% endfor %}
+<nav class="admin-nav" aria-label="System and administration">
+{% if is_superadmin %}
+{% for url,label in [('/platform/settings','Network & TLS'),('/platform/admin-users','Administrators'),('/platform/admin-roles','Roles & permissions'),('/platform/active-directory','AD / LDAP'),('/platform/modules','Modules'),('/platform/license','License'),('/radius/server','RADIUS settings')] %}
+{% if url in available.paths %}<a href="{{ url }}" {% if request.url.path == url %}aria-current="page"{% endif %}>{{ label }}</a>{% endif %}
+{% endfor %}
+{% endif %}
+{% for url,label in [('/tacacs/diagnostics','Diagnostics'),('/tacacs/aaa-health','AAA health')] %}
+{% if url in available.paths %}<a href="{{ url }}" {% if request.url.path == url %}aria-current="page"{% endif %}>{{ label }}</a>{% endif %}
+{% endfor %}
+</nav>
+<p id="admin-page-state" class="form-error" role="status" hidden></p>

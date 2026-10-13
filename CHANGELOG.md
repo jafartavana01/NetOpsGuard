@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — System & Administration workspace
+
+- Consistent administration navigation, searchable account/role tables, accessible dialogs, and unsaved-change protection.
+- Clear separation between saved settings, management-service restart, AAA Configuration Apply, and observed runtime status.
+- Improved directory connection testing, RADIUS listener/probe feedback, licensing, database/service diagnostics, and configuration-event inspection.
+- Certificate/private-key and license imports use file selection without displaying the supplied file contents.
+- Failed restart requests no longer report success; blocked configuration validation no longer reports that nothing is pending.
+- Account editing is blocked when required role information cannot be loaded. Disabling accounts and changing assigned privileges require confirmation.
+
+This update changes presentation and existing API integration, not authorization, identity authority, licensing enforcement, or database behavior. PostgreSQL and native AAA/device verification remain separate deployment gates.
+
 ## Current public release
 
 This is a user-facing summary of the packaged source. It does not assign a new semantic version or claim a native installation certification.

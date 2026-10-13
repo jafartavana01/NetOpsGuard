@@ -46,3 +46,18 @@ node tests/f03/restoration_browser.cjs
 ```
 
 Browser evidence is generated under docs directories and should not be committed. Browser success is not an end-to-end database or AAA claim.
+
+## System & Administration regression tests
+
+```sh
+python tests/gui06/test_permissions.py
+node tests/gui06/browser.cjs
+```
+
+The GUI-06 browser script uses `python` from PATH, Playwright, and `GUI_CHROMIUM`. It serves actual templates on loopback port 8770 with synthetic API responses. It writes no evidence files by default; `GUI06_SCREENSHOT_DIR` optionally enables temporary screenshots outside the repository.
+
+Coverage includes account/role mutations, missing permission catalogs, confirmation and discard behavior, network/TLS saves, restart failures, directory form-versus-saved checks, late responses, secret masking, license import/download, blocked candidate diagnostics, RADIUS settings/probes, SPA/back-forward navigation, keyboard focus, and 1366/1440/1920/2560px layouts. Permission tests use the real FastAPI routes and dependencies with synthetic identities; they do not exercise PostgreSQL.
+
+GUI-06 verification: 172 browser checks and 8 authorization/CSRF tests passed. Existing browser regressions passed (471 checks across GUI-01–05, atomic policy, restoration, and dependency deletion). F03 remains 189 PASS / 13 XFAIL; `--no-xfail` exposes those same 13 failures. PostgreSQL suites explicitly skipped 57 tests because no disposable test DSN was supplied. Native AAA, directory, and device verification was not performed in this GUI phase.
+
+Known deferred work remains: NCM backup-schedule execution and actual backup creation, audit-comparison resolution semantics, PostgreSQL verification, native AAA/device testing, and directory TLS trust enforcement. Passing GUI checks does not clear these issues.

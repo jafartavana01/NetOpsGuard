@@ -1,13 +1,14 @@
 {% extends "app_shell.html" %}
 {% import "partials/icons.html" as icons %}
 {% block title %}Admin Users — NetOpsGuard{% endblock %}
-{% block breadcrumb %}Platform / Admin Users{% endblock %}
+{% block breadcrumb %}System / Admin Users{% endblock %}
 
 {% block view_content %}
-<main class="content">
+<main class="content admin-workspace">
+  {% include "partials/admin_workspace.html" %}
       <div class="content-head">
         <h1>Admin Users</h1>
-        <p class="content-sub">Who can log into this GUI, and with what privileges. Superadmins can manage other admin accounts and platform network/TLS settings; standard admins can do everything else.</p>
+        <p class="content-sub">Who can log into this GUI, and with what privileges. Superadmins can manage other admin accounts and platform network/TLS settings; standard accounts follow their assigned role. No role means full standard-admin access.</p>
       </div>
 
       <div class="panel panel-wide" style="margin-bottom:20px;">
@@ -36,13 +37,13 @@
         <span class="field-label">Username</span>
         <div class="field-icon-wrap">
           <span class="field-icon">{{ icons.icon('user', 14) }}</span>
-          <input type="text" id="admin-username" required>
+          <input type="text" id="admin-username" required maxlength="64">
         </div>
       </label>
 
       <label class="field">
         <span class="field-label">Password</span>
-        <input type="password" id="admin-password" placeholder="" autocomplete="new-password">
+        <input type="password" id="admin-password" minlength="8" maxlength="256" placeholder="" autocomplete="new-password">
       </label>
       <div class="field-hint" id="admin-password-hint" style="margin-top:-10px;margin-bottom:14px;">Required for new admins (8+ characters). Leave blank when editing to keep the current password.</div>
 
@@ -82,7 +83,12 @@
 
 {% block view_scripts %}
 <script>
+(() => {
+  const ui = AdminUI.view(), document = ui.document, $ = ui.$;
   let admins = [];
+  let ready = false;
+  ui.watch("admin-form");
+  OpsUI.table("admins-table-wrap");
 
   function escapeHtml(s) {
     // Escapes quotes as well as angle brackets, so the result is safe
@@ -110,13 +116,13 @@
     const rows = admins.map(a => `
       <tr>
         <td>${escapeHtml(a.username)}${a.is_self ? ' <span class="content-sub">(you)</span>' : ''}</td>
-        <td>${a.is_superadmin ? '<span class="badge badge-on">Superadmin</span>' : '<span class="badge">Standard</span>'}${a.role_name ? '<br><span class="content-sub">' + escapeHtml(a.role_name) + '</span>' : ''}</td>
+        <td>${a.is_superadmin ? '<span class="badge badge-on">Superadmin</span>' : '<span class="badge">Standard</span>'}${!a.is_superadmin && !a.role_name ? '<br><span class="content-sub">Full standard-admin access</span>' : ''}${a.role_name ? '<br><span class="content-sub">' + escapeHtml(a.role_name) + '</span>' : ''}</td>
         <td>${a.is_active ? '<span class="badge badge-on">Active</span>' : '<span class="badge badge-off">Disabled</span>'}</td>
-        <td class="cell-mono">${escapeHtml(a.allowed_source_ips || 'anywhere')}</td>
+        <td>Local</td><td class="cell-mono">${escapeHtml(a.allowed_source_ips || 'anywhere')}</td>
         <td class="cell-mono">${a.last_login_at ? new Date(a.last_login_at).toLocaleString() : 'never'}</td>
         <td class="cell-actions">
-          <button class="btn-secondary btn-small" data-edit="${a.id}">Edit</button>
-          <button class="btn-danger btn-small" data-delete="${a.id}" ${a.is_self ? 'disabled title="You cannot delete your own account."' : ''}>Delete</button>
+          <button class="btn-secondary btn-small" data-edit="${escapeHtml(a.id)}">Edit</button>
+          <button class="btn-danger btn-small" data-delete="${escapeHtml(a.id)}" ${a.is_self ? 'disabled title="You cannot delete your own account."' : ''}>Delete</button>
         </td>
       </tr>
     `).join('');
@@ -124,7 +130,7 @@
     wrap.innerHTML = `
       <table class="data-table">
         <thead>
-          <tr><th>Username</th><th>Role</th><th>Status</th><th>Trusted hosts</th><th>Last login</th><th></th></tr>
+          <tr><th>Username</th><th>Role</th><th>Status</th><th>Authentication</th><th>Trusted hosts</th><th>Last login</th><th></th></tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
@@ -139,31 +145,28 @@
   }
 
   async function loadAdmins() {
-    const res = await AAAPlatform.authedFetch('/api/admin-users');
-    if (res.status === 401) { window.location.href = '/login'; return; }
-    if (res.status === 403) {
-      document.getElementById('admins-table-wrap').innerHTML = '<div class="empty-state">Superadmin privileges required.</div>';
-      return;
-    }
-    admins = await res.json();
+    admins = await ui.request('/api/admin-users');
     renderTable();
   }
 
   let allRoles = [];
 
   async function loadRoleOptions() {
-    const res = await AAAPlatform.authedFetch('/api/admin-roles');
-    if (res.ok) allRoles = await res.json();
+    allRoles = await ui.request('/api/admin-roles');
     const select = document.getElementById('admin-role-select');
     select.innerHTML = '<option value="">— None (full standard-admin access) —</option>' +
       allRoles.map(r => `<option value="${r.id}">${escapeHtml(r.name)}</option>`).join('');
   }
 
   function openModal(admin) {
+    if (!ready) { ui.notice("Required access information is unavailable. Reload before editing."); return; }
+    ui.clean("admin-form");
     document.getElementById('admin-form-error').hidden = true;
     document.getElementById('admin-form').reset();
     document.getElementById('admin-is-active').checked = true;
 
+    if (admin && admin.role_id && !allRoles.some(r => r.id === admin.role_id)) { ui.notice('Assigned role is unavailable. Reload before editing this account.'); return; }
+    $('admin-password').required = !admin;
     if (admin) {
       document.getElementById('admin-modal-title').textContent = 'Edit admin';
       document.getElementById('admin-id').value = admin.id;
@@ -185,7 +188,7 @@
   }
 
   function closeModal() {
-    document.getElementById('admin-modal-backdrop').hidden = true;
+    ui.close('admin-modal-backdrop');
   }
 
   document.getElementById('add-admin-btn').addEventListener('click', () => openModal(null));
@@ -220,41 +223,31 @@
     const url = id ? `/api/admin-users/${id}` : '/api/admin-users';
     const method = id ? 'PUT' : 'POST';
 
-    const res = await AAAPlatform.authedFetch(url, {
-      method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
-    });
-
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      let msg = 'Could not save admin.';
-      if (body.detail && typeof body.detail === 'string') msg = body.detail;
-      else if (Array.isArray(body.detail) && body.detail[0] && body.detail[0].msg) msg = body.detail[0].msg;
-      errorBox.textContent = msg;
-      errorBox.hidden = false;
-      return;
-    }
-
-    closeModal();
-    AAAPlatform.toast(id ? 'Admin updated.' : 'Admin added.');
-    loadAdmins();
+    const previous = admins.find(a => a.id === id);
+    if (previous && ((!payload.is_active && previous.is_active) || payload.is_superadmin !== previous.is_superadmin || payload.role_id !== previous.role_id) && !confirm('Change account access for "' + previous.username + '"? Disabling, role changes, and superadmin changes affect privileges.')) return;
+    await ui.run(e.submitter, 'admin-form-error', async () => {
+      await ui.request(url, ui.json(method, payload));
+      ui.clean('admin-form');
+      $('admin-modal-backdrop').hidden = true;
+      $('admin-password').value = '';
+      AAAPlatform.toast('Admin saved.');
+      await loadAdmins();
+    }, $('admin-form'));
   });
 
   async function deleteAdmin(id) {
     const admin = admins.find(a => a.id === id);
     if (!confirm(`Delete admin "${admin ? admin.username : id}"? This cannot be undone.`)) return;
 
-    const res = await AAAPlatform.authedFetch(`/api/admin-users/${id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      const msg = (body.detail && typeof body.detail === 'string') ? body.detail : 'Could not delete admin.';
-      AAAPlatform.toast(msg, 'error');
-      return;
-    }
-    AAAPlatform.toast('Admin deleted.');
-    loadAdmins();
+    await ui.run(document.querySelector('[data-delete="'+id+'"]'), null, async () => {
+      await ui.request(`/api/admin-users/${id}`, {method:'DELETE'});
+      AAAPlatform.toast('Admin deleted.');
+      await loadAdmins();
+    });
   }
 
-  loadRoleOptions();
-  loadAdmins();
+  $('add-admin-btn').disabled = true;
+  Promise.all([loadRoleOptions(), loadAdmins()]).then(() => {ready=true;$('add-admin-btn').disabled=false;}).catch(e => ui.notice(e.message));
+})();
 </script>
 {% endblock %}

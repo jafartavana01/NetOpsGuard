@@ -1,0 +1,48 @@
+/* GUI-06 scoped administration workspace; existing tokens and shell are unchanged. */
+.admin-workspace {min-width:0;max-width:none}
+.admin-nav {display:flex;flex-wrap:wrap;gap:5px;padding:0 0 12px;border-bottom:1px solid var(--border-default);margin-bottom:22px}
+.admin-nav a {padding:8px 10px;color:var(--text-secondary);font-size:12px;border-radius:var(--radius-sm);text-decoration:none}
+.admin-nav a[aria-current] {background:var(--bg-selected);color:var(--accent-primary)}
+.admin-workspace .content-head {margin:20px 0 14px}
+.admin-workspace .panel-grid,.admin-workspace .sec-grid {gap:16px;background:transparent;border:0;grid-template-columns:repeat(2,minmax(0,1fr))}
+.admin-workspace .panel,.admin-workspace .panel-body {min-width:0}
+.admin-workspace .status-card-grid {gap:12px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+.admin-workspace .status-card {padding:14px;min-height:86px}
+.admin-workspace .status-card-value {font-size:24px}
+.admin-workspace .field-row {gap:18px;margin-bottom:14px}
+.admin-workspace .field {min-width:0;margin-bottom:14px}
+.admin-workspace input:not([type=checkbox]):not([type=radio]),.admin-workspace select,.admin-workspace textarea,.admin-overlay input:not([type=checkbox]):not([type=radio]),.admin-overlay select,.admin-overlay textarea {width:100%;min-width:0}
+.admin-workspace form,.admin-workspace .admin-form-panel {padding:22px;background:var(--bg-surface);border:1px solid var(--border-default);border-radius:var(--radius-md)}
+.admin-workspace #ad-config {display:block}
+.admin-workspace #ad-config[hidden] {display:none}
+.admin-workspace #ad-config>.field-hint,.admin-workspace #ad-config>button,.admin-workspace #ad-advanced-section,.admin-workspace #ad-test-result,.admin-workspace #ad-form-error,.admin-workspace #ad-config>.modal-actions {grid-column:1/-1}
+.admin-workspace .field-hint,.admin-overlay .field-hint {margin-top:6px!important;line-height:1.5}
+.admin-workspace .data-table {font-size:12px;min-width:700px}
+.admin-workspace .data-table th,.admin-workspace .data-table td {padding:11px 12px;vertical-align:top;overflow-wrap:anywhere}
+.admin-workspace .cell-actions button {white-space:nowrap}
+.admin-workspace .diff-view {white-space:pre-wrap;overflow-wrap:anywhere;max-height:400px;overflow:auto;padding:14px;font:12px/1.65 var(--font-mono)}
+.admin-note,.admin-form-state {font-size:12px;line-height:1.5;color:var(--text-muted);margin:10px 0}
+.admin-form-state:not(:empty) {color:var(--warning)}
+.admin-actions {display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:12px 0}
+.admin-actions button,.admin-actions a {width:auto}
+.admin-overlay .modal {width:min(92vw,920px);max-width:920px!important;max-height:90vh;overflow:auto}
+.admin-overlay .field-row {gap:16px}
+.admin-overlay .field {margin-bottom:14px;min-width:0}
+.admin-overlay #permission-checklist {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.admin-workspace #modules-wrap {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.admin-workspace .admin-copy {margin:10px 0 0;width:auto}
+.admin-workspace details {margin:10px 0}
+.admin-workspace summary {cursor:pointer}
+@media(min-width:1800px){.admin-workspace #modules-wrap {grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:900px){.admin-workspace .panel-grid,.admin-workspace .sec-grid,.admin-workspace #modules-wrap,.admin-workspace #ad-config {grid-template-columns:1fr}.admin-overlay #permission-checklist {grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.admin-workspace .panel-body {padding:18px}
+.admin-workspace form.panel-body {border:0;margin:0;background:transparent}
+.admin-workspace .modal-actions {position:static;padding:14px 0 4px;background:transparent}
+.admin-workspace .admin-identity-grid {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}
+.admin-workspace .admin-identity-grid .field {margin-bottom:8px}
+.admin-workspace input[type=file]::file-selector-button,.admin-overlay input[type=file]::file-selector-button {background:var(--bg-surface-raised);color:var(--text-primary);border:1px solid var(--border-default);border-radius:4px;padding:7px 10px;margin-right:12px;cursor:pointer}
+.admin-workspace .readout-v {overflow-wrap:anywhere;min-width:0}
+@media(max-width:1000px){.admin-workspace .admin-identity-grid{grid-template-columns:1fr}}
+
+.admin-workspace [aria-busy=true],.admin-overlay [aria-busy=true] {cursor:progress}

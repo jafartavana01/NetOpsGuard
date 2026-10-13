@@ -17,14 +17,16 @@ Verify that the NetOpsGuard server can reach the directory controller and valida
 
 ## Map a directory group to authorization
 
-1. Configure directory connectivity under **Platform → Active Directory**.
-2. Test the connection and directory authentication against the intended controller.
+1. Configure directory connectivity under **System → Active Directory**.
+2. Use **Test Connection** for the form values or **Run health check** for saved settings. These are platform LDAP checks, not native MAVIS login tests or certificate-trust verification.
 3. Import or bind the relevant external group to its specific identity source.
 4. Define the intended devices or device groups, command sets, and policy conditions.
 5. Inspect the generated candidate configuration for binding diagnostics before Apply.
 6. Test with a real directory user who is a member of the group **and** a user who is not a member, using the target network device.
 
 Directory membership may be resolved at authentication time and does not necessarily appear as local user rows. Do not treat locally enumerated user/group records as proof of native daemon membership decisions.
+
+The platform's current LDAP test/browser client does not verify the directory server certificate (`CERT_NONE`). A successful encrypted connection test must not be interpreted as verified server identity. The administration interface now identifies this limitation; the backend behavior is unchanged. Validate the deployed MAVIS trust configuration separately.
 
 ## Key security considerations
 
