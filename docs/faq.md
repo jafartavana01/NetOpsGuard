@@ -46,3 +46,7 @@ Back up the database and matching encryption/configuration material first, and t
 ## Where should I report issues or security vulnerabilities?
 
 Use the [issue tracker](https://github.com/jafartavana01/NetOpsGuard/issues) for ordinary problems, with sanitized logs and reproduction steps. Follow the [private security reporting policy](https://github.com/jafartavana01/NetOpsGuard/blob/main/SECURITY.md) for suspected vulnerabilities.
+
+## Was NetOpsGuard previously called NetworkAAA?
+
+Yes. **NetworkAAA** was the former project name. **NetOpsGuard** is the current repository and product name. Earlier community articles may still refer to NetworkAAA or link to an older repository; use the [current NetOpsGuard project](https://github.com/jafartavana01/NetOpsGuard) for up-to-date documentation.

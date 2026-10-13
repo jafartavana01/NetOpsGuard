@@ -7,7 +7,9 @@ permalink: /
 
 # Network AAA and security operations, in one platform
 
-NetOpsGuard is an **open-source, self-hosted network management platform** for teams operating Cisco and other supported network infrastructure. Centrally manage **TACACS+ authentication, command authorization and accounting**, connect directory identities, inspect configuration changes, and review security findings through a web interface.
+NetOpsGuard (previously **NetworkAAA**) is an **open-source, self-hosted network management platform** for teams operating Cisco and other supported network infrastructure. Centrally manage **TACACS+ authentication, command authorization and accounting**, connect directory identities, inspect configuration changes, and review security findings through a web interface.
+
+![NetOpsGuard web dashboard showing network operations and TACACS+ management](https://github.com/user-attachments/assets/60af06ac-6017-447e-bd37-69bb27d9c427)
 
 **Get started at no cost:** The Community edition supports **up to five managed devices** with the currently available feature set. Larger device limits use signed licences.
 

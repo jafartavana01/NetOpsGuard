@@ -6,6 +6,8 @@ NetOpsGuard helps network teams control who can access their infrastructure, whi
 
 **Free Community edition: up to 5 devices, with the currently available feature set.** Larger device limits are available through signed licences. [See licensing](docs/LICENSING.md).
 
+> **Previously known as NetworkAAA.** NetOpsGuard is the current project name and repository. Please link to this repository when referencing the platform.
+
 ![NetOpsGuard web interface](https://github.com/user-attachments/assets/60af06ac-6017-447e-bd37-69bb27d9c427)
 
 [**Installation**](#quick-start) · [**Features**](#what-you-can-do) · [**First configuration**](#your-first-configuration) · [**Documentation**](#documentation) · [**Security**](SECURITY.md) · [**Issues**](https://github.com/jafartavana01/NetOpsGuard/issues)
