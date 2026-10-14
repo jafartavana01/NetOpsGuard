@@ -13,7 +13,7 @@
 
   <div class="panel panel-wide" style="margin-bottom:20px;">
     <div class="panel-body" style="font-size:12.5px;color:var(--text-dim);">
-      Counts describe the current parsed accounting-log tail. They are not authentication success rates or a security score. Search access and authorization logs in Diagnostics.
+      Counts describe the last 24 hours of the sampled command authorization log. They are not authentication success rates or a security score. Search access and authorization logs in Diagnostics.
     </div>
   </div>
 
@@ -115,7 +115,7 @@
     const authTotal = data.permit_count + data.non_permit_count;
     const permitRate = authTotal > 0 ? Math.round((data.permit_count / authTotal) * 100) : null;
     document.getElementById('activity-kpis').innerHTML = [
-      AAAPlatform.kpiCard({ icon: ICON_LIST, label: 'Records In Tail', value: data.total_records_in_tail }),
+      AAAPlatform.kpiCard({ icon: ICON_LIST, label: 'Records · last 24h', value: data.total_records_in_tail }),
       AAAPlatform.kpiCard({ icon: ICON_ACTIVITY, label: 'Last Hour', value: data.events_last_hour }),
       AAAPlatform.kpiCard({ icon: ICON_SERVER, label: 'Devices', value: data.distinct_devices }),
       AAAPlatform.kpiCard({ icon: ICON_USER, label: 'Users', value: data.distinct_users }),
@@ -129,7 +129,7 @@
 
     activityGrid.innerHTML = `
       <div class="panel">
-        <div class="panel-head"><span class="rail rail-dim"></span>Volume (current log tail)</div>
+        <div class="panel-head"><span class="rail rail-dim"></span>Volume (last 24h, sampled)</div>
         <div class="panel-body mono">
           ${renderReadout('total records', data.total_records_in_tail)}
           ${renderReadout('parsed', data.parsed_records)}

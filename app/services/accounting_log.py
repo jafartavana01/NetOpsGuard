@@ -574,35 +574,43 @@ def group_into_sessions(records: list[AccountingRecord]) -> list[SessionSummary]
     return sessions
 
 
-def compute_hourly_activity(records: list[AccountingRecord], *, hours: int = 24) -> list[dict]:
-    """
-    A real time-series for the Dashboard's activity chart: total
-    parsed-record count per hourly bucket over the last `hours` hours,
-    oldest first. Only counts records with a successfully parsed
-    timestamp (see module docstring on `_try_parse_timestamp` -- best
-    effort, not guaranteed for every line) -- a record whose timestamp
-    didn't parse is simply absent from every bucket rather than
-    guessed into one, so the chart never implies more precision than
-    the underlying data supports. Buckets with zero events are still
-    included (as 0), so the chart's x-axis stays a continuous,
-    genuine hourly timeline rather than skipping silently over quiet
-    periods.
-    """
-    now = datetime.now(timezone.utc)
-    bucket_starts = [
-        now.replace(minute=0, second=0, microsecond=0) - timedelta(hours=h)
-        for h in range(hours - 1, -1, -1)
-    ]
-    counts = {b: 0 for b in bucket_starts}
-
-    for r in records:
-        if not r.parsed or not r.parsed_at:
+def activity_window(records: list[AccountingRecord], *, hours: int = 24, now: datetime | None = None) -> tuple[list[AccountingRecord], dict]:
+    """Select timestamped command records in a rolling UTC window; never guess dates."""
+    now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    start = now - timedelta(hours=hours)
+    selected = []
+    outside = unknown = 0
+    for record in records:
+        if not record.parsed or not record.cmd:
             continue
-        bucket = r.parsed_at.replace(minute=0, second=0, microsecond=0)
-        if bucket in counts:
-            counts[bucket] += 1
+        stamp = record.parsed_at
+        if stamp is None or stamp.tzinfo is None:
+            unknown += 1
+        elif start <= stamp <= now:
+            selected.append(record)
+        else:
+            outside += 1
+    return selected, {"start": start.isoformat(), "end": now.isoformat(), "hours": hours,
+                      "sample_records": len(records), "outside_window": outside,
+                      "unknown_timestamp": unknown}
 
-    return [{"hour": b.isoformat(), "count": counts[b]} for b in bucket_starts]
+
+def compute_hourly_activity(records: list[AccountingRecord], *, hours: int = 24, now: datetime | None = None) -> list[dict]:
+    """Rolling window, UTC hourly buckets, including partial first/last hours."""
+    now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    start = (now - timedelta(hours=hours)).replace(minute=0, second=0, microsecond=0)
+    end = now.replace(minute=0, second=0, microsecond=0)
+    counts = {}
+    bucket = start
+    while bucket <= end:
+        counts[bucket] = 0
+        bucket += timedelta(hours=1)
+    selected, _ = activity_window(records, hours=hours, now=now)
+    for record in selected:
+        # Normalize BEFORE rounding: +0330/+0545 records otherwise miss UTC buckets.
+        bucket = record.parsed_at.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        counts[bucket] += 1
+    return [{"hour": b.isoformat(), "count": count} for b, count in counts.items()]
 
 
 def compute_health_and_failure_stats(records: list[AccountingRecord]) -> dict:

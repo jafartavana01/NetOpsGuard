@@ -4,6 +4,12 @@
 
 Use the administrator account chosen at installation. Configure HTTPS in Platform Settings and restrict management connectivity. An account without a granular role retains broad legacy administrator permissions; assign a role to restrict it. Keep at least one recoverable superadmin account.
 
+## Dashboard observations
+
+AAA activity and authorization totals describe timestamped command authorization records in the last 24 hours of the bounded log sample (up to 2,000 log lines). UTC hourly buckets include partial first and last hours; labels use your browser timezone. Records outside that window or with unknown timestamps are excluded, not assigned invented times. Non-permit includes any non-empty result other than permit and is not necessarily an explicit deny. Login/authentication events remain separate.
+
+For superadmins with Directory access, the dashboard checks saved directory settings on entry and every 60 seconds while the view remains open. **Check directory** remains available between requests. The check is a read-only LDAP bind and base-object lookup; it does not verify MAVIS authorization or certificate trust. The last attempt is displayed, errors remain Unknown/failed, and navigation stops polling. Each open dashboard has its own polling cycle.
+
 ## Navigation and editing
 
 On narrow screens, open the navigation menu from the top bar; Escape closes it and returns focus to the menu button. Wide result tables scroll independently so addresses, commands, and scope values remain readable. Table filters marked “loaded rows” search the current loaded results, not additional server records.

@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased — Interface consistency and usability
+## Unreleased — Compact interface and dashboard corrections
+
+- Compact table rows, controls, cards, and toolbars retain the existing visual identity and readable text. Device and Policy actions stay on one line inside scrollable tables.
+- AAA hourly activity normalizes timezone offsets before grouping. Authorization totals and hourly activity now share the selected rolling time window; empty activity explains out-of-window and unknown timestamps.
+- Directory health checks automatically on dashboard entry and every 60 seconds, retains manual checking, and shows the last attempt. Requests do not overlap in the dashboard and polling stops when leaving it.
+
+## Interface consistency and usability
 
 - Rapid navigation keeps the latest selected page, follows server redirects, and focuses the new heading for keyboard users.
 - Dialog cancellation consistently protects unsaved edits; Escape on the discard prompt keeps the form open. Existing feature-specific save and permission checks remain authoritative.

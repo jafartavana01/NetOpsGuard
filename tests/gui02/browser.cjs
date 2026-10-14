@@ -45,7 +45,7 @@ let serverError='';server.stderr.on('data',d=>serverError+=d);server.on('error',
  await page.locator('#ops-technical summary').click();check('build information preserved',(await page.locator('#ops-build').innerText()).includes('synthetic-fixture'));await page.locator('#ops-technical summary').click();
  check('six authorized action shortcuts',await page.locator('#ops-actions a').count()===6);
  check('all dashboard links are real existing destinations',await page.evaluate(()=>{const paths=[...document.querySelectorAll('#sidebar-nav a')].map(a=>a.getAttribute('href'));return [...document.querySelectorAll('#ops-center a')].every(a=>paths.includes(a.getAttribute('href')));}));
- check('directory starts unknown without probing',requests.filter(r=>r.path==='/api/ad-settings/health').length===0);
+ check('directory performs one automatic initial check',requests.filter(r=>r.path==='/api/ad-settings/health').length===1);
  await page.getByRole('button',{name:'Check directory',exact:true}).click();await page.waitForFunction(()=>document.querySelector('#ops-health').textContent.includes('Check passed'));
  check('directory check on demand succeeds',(await page.locator('#ops-health').textContent()).includes('Check passed'));
  values['/api/devices']=values['/api/devices'].slice(0,3);

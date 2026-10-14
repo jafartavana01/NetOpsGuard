@@ -6,10 +6,10 @@
 .aaa-workspace .status-card-grid { gap:10px; }
 .aaa-workspace .status-card { padding:12px 16px; }
 .aaa-workspace .data-table { font-size:12.5px; width:100%; }
-.aaa-workspace .data-table td,.aaa-workspace .data-table th { padding:11px 12px; vertical-align:top; }
+.aaa-workspace .data-table td,.aaa-workspace .data-table th { padding:var(--row-padding); vertical-align:top; }
 .aaa-workspace .data-table td { overflow-wrap:anywhere; }
-.aaa-workspace .data-table td.cell-actions { display:table-cell; min-width:196px; width:196px; white-space:normal; }
-.aaa-workspace .cell-actions button { white-space:nowrap; margin:0 4px 6px 0; padding:5px 8px; }
+.aaa-workspace .data-table td.cell-actions { display:table-cell; width:1%; white-space:nowrap; }
+.aaa-workspace .cell-actions button { white-space:nowrap; margin:0 4px 0 0; padding:4px 8px; }
 .aaa-workspace .data-table td .cell-mono { white-space:nowrap; }
 .aaa-workspace .data-table th { white-space:nowrap; }
 .aaa-workspace .data-table tr[hidden] { display:none; }
@@ -46,5 +46,5 @@
 .aaa-timeline { padding-left:24px; line-height:1.8; }
 .aaa-timeline li { padding:5px 0 5px 8px; }
 .aaa-timeline code { white-space:pre-wrap; overflow-wrap:anywhere; }
-@media(min-width:1800px) { .aaa-workspace .data-table td,.aaa-workspace .data-table th { padding:12px 18px; } }
+@media(min-width:1800px) { .aaa-workspace .data-table td,.aaa-workspace .data-table th { padding:var(--row-padding); } }
 @media(max-width:900px) { .aaa-filter-panel .panel-body { grid-template-columns:repeat(2,minmax(0,1fr)); }.aaa-workspace .field-row { flex-wrap:wrap; }.aaa-workspace .field-row>.field { flex:1 1 210px; }.aaa-table-scroll .data-table { min-width:800px; }.aaa-table-tools .content-sub { margin-left:0; }.aaa-drawer-backdrop > .modal { width:100vw; padding:18px; } }

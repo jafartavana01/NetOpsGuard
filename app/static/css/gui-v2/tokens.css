@@ -16,7 +16,7 @@
   --type-page:24px; --type-section:18px; --type-card:14px; --type-body:14px;
   --type-secondary:13px; --type-label:12px; --type-caption:11px; --type-metric:26px;
   --sidebar-width:244px; --sidebar-collapsed:68px; --topbar-height:58px;
-  --control-height:34px; --row-padding:10px 12px; --shadow-overlay:0 16px 48px #0006;
+  --control-height:32px; --row-padding:7px 10px; --shadow-overlay:0 16px 48px #0006;
   --bg-void:var(--bg-app); --bg-panel:var(--bg-surface); --bg-panel-raised:var(--bg-surface-raised);
   --line:var(--border-subtle); --line-soft:var(--border-subtle); --line-bright:var(--border-strong);
   --text-dim:var(--text-secondary); --text-faint:var(--text-muted);

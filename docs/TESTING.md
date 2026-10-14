@@ -76,3 +76,18 @@ Coverage includes rapid and redirected navigation, refresh/back/forward, drawer 
 GUI-07 verification: 88 focused browser checks and 126 layout checks passed. The layout matrix covers 42 pages at 390, 768, and 1440px; focused dialog/table checks also cover 360, 1366, and 1920px. Existing GUI-01–06, atomic-policy, restoration, and deletion browser regressions passed all 643 checks. F03 remains 189 PASS / 13 XFAIL, with the same 13 failures exposed by `--no-xfail`. Existing authorization/CSRF checks and project regression scripts passed without changing their assertions.
 
 PostgreSQL suites explicitly skipped 57 tests without a disposable test DSN. Real Cisco, tac_plus-ng/MAVIS, directory, and NAS verification were not performed. Known NCM scheduling, audit-comparison, LDAP certificate-verification, and role-deletion privilege-fallback defects remain open; these interface checks do not clear them for release.
+
+## Compact interface and dashboard regression tests
+
+```sh
+python tests/gui071/test_activity.py
+node tests/gui071/browser.cjs
+```
+
+The browser script requires Playwright, `GUI_CHROMIUM`, `GUI_CHART_JS`, and the existing Python test dependencies. It serves actual templates on loopback port 8772 with synthetic API responses and writes no evidence packages.
+
+Coverage includes real-format authorization records, fractional timezone offsets, rolling-window boundaries, malformed and missing timestamps, command-versus-login filtering, and consistent API totals/buckets. Browser checks cover compact Device/Policy actions at 390/768/1440/1920px, automatic and manual directory checks, overlapping requests, timeouts, denied/expired sessions, network failures, and SPA polling cleanup.
+
+GUI-07.1 verification: 14 activity tests and 47 browser checks passed. Existing GUI-01–07 and policy/restoration/dependency browser suites passed 857 checks; GUI-06 required an isolated rerun after a timing-sensitive first-run failure. F03 remains 189 PASS / 13 XFAIL; `--no-xfail` exposes the same 13 failures. The older manual-only dashboard expectation was updated to require one initial check and one cleaned-up 60-second interval. Security assertions were retained.
+
+PostgreSQL suites skipped 57 tests without a disposable test DSN. Native Cisco, tac_plus-ng/MAVIS, and directory tests remain unverified. Browser cancellation does not prove an in-flight LDAP operation has stopped on the server. Known functional and security defects listed above remain open.

@@ -46,7 +46,7 @@ input[aria-invalid=true],select[aria-invalid=true],textarea[aria-invalid=true] {
 .field-success { color:var(--success); }
 .table-scroll { overflow:auto; border:1px solid var(--border-subtle); border-radius:var(--radius-md); }
 .data-table { width:100%; border-collapse:collapse; background:var(--bg-surface); font-size:13px; }
-.data-table th { font:600 11px/1.4 var(--font-ui); color:var(--text-secondary); background:var(--bg-surface-raised); padding:11px 12px; letter-spacing:.4px; }
+.data-table th { font:600 11px/1.4 var(--font-ui); color:var(--text-secondary); background:var(--bg-surface-raised); padding:var(--row-padding); letter-spacing:.4px; }
 .data-table td { padding:var(--row-padding); border-bottom:1px solid var(--border-subtle); }
 .data-table tbody tr:hover { background:var(--bg-hover); }
 .data-table tr[aria-selected=true],.data-table tr.is-selected { background:var(--bg-selected); }
@@ -110,3 +110,13 @@ button[aria-busy=true] { cursor:progress; }
  .modal-actions { flex-wrap:wrap; }
  #notification-stack { bottom:16px; right:16px; }
 }
+
+/* Compact information density without reducing body text or hiding actions. */
+.content .status-card {min-height:64px;padding:10px 12px;gap:8px}
+.content .status-card-value {font-size:24px}
+.content .data-table th,.content .data-table td {padding:var(--row-padding)}
+.content .toolbar,.content .filter-bar {margin-bottom:10px;gap:8px}
+.content .panel-head {padding:10px 14px}
+.content .panel-body {padding:12px 14px}
+.content .field {margin-bottom:10px}
+.content .content-head {margin-bottom:12px}

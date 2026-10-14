@@ -13,12 +13,12 @@
 .security-workspace .sec-gauge-value {font-size:28px;margin-top:-73px}
 .security-workspace .sec-gauge-label {margin-top:57px}
 .security-workspace .status-card-grid {gap:10px;grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
-.security-workspace .status-card {padding:14px;min-height:84px}
+.security-workspace .status-card {padding:10px 12px;min-height:64px}
 .security-workspace .status-card-value {font-size:26px}
 .security-workspace .panel,.security-workspace .panel-body {min-width:0}
 .security-workspace .panel-body:has(>.data-table),.security-workspace #findings-table-wrap,.security-workspace #compliance-body {overflow-x:auto}
 .security-workspace .data-table {font-size:12px;width:100%}
-.security-workspace .data-table td,.security-workspace .data-table th {padding:11px 12px;vertical-align:top;overflow-wrap:anywhere}
+.security-workspace .data-table td,.security-workspace .data-table th {padding:var(--row-padding);vertical-align:top;overflow-wrap:anywhere}
 .security-workspace .data-table th {white-space:nowrap;word-break:normal}
 .security-workspace .cell-mono {word-break:normal}
 .security-workspace .cell-actions a,.security-workspace .cell-actions button {white-space:nowrap;overflow-wrap:normal}

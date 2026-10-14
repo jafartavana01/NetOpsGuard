@@ -41,7 +41,7 @@
     const button=(label,handler,cls='btn-secondary btn-small')=>{const b=node('button',cls,label);b.type='button';b.addEventListener('click',handler);return b;};
     const data=key=>state[key]?.status==='ok'?state[key].data:null;
     const available=key=>state[key]?.status==='ok';
-    const textState=key=>({loading:'Loading…',restricted:'Not available for this account',forbidden:'Permission denied',unlicensed:'Not included in this license',disabled:'Source not available',error:'Unable to load this source'})[state[key]?.status]||'Unknown';
+    const textState=key=>({loading:'Loading…',expired:'Session expired — sign in again',restricted:'Not available for this account',forbidden:'Permission denied',unlicensed:'Not included in this license',disabled:'Source not available',error:'Unable to load this source'})[state[key]?.status]||'Unknown';
     function placeholder(key,title) {
       const box=node('div',state[key]?.status==='loading'?'loading-inline':'ops-unavailable');
       if(state[key]?.status==='loading'){const spinner=node('span','spinner');spinner.setAttribute('aria-hidden','true');box.setAttribute('role','status');box.append(spinner);}
@@ -56,7 +56,7 @@
       const timeout=setTimeout(()=>controller.abort(),20000);
       try {
         const response=await AAAPlatform.authedFetch(url,{signal:controller.signal});
-        if(!response.ok)return {status:response.status===403?'forbidden':response.status===402?'unlicensed':response.status===404?'disabled':'error'};
+        if(!response.ok)return {status:response.status===401?'expired':response.status===403?'forbidden':response.status===402?'unlicensed':response.status===404?'disabled':'error'};
         const value=await response.json();if(!valid(value))return {status:'error'};
         return {status:'ok',data:value};
       }catch(_){return {status:'error'};}
@@ -79,7 +79,7 @@
       const total=auth?auth.counts.success+auth.counts.failure:0;
       find('metrics').replaceChildren(
         metric('Devices',devices?devices.length:'—',devices?devices.filter(d=>d.enabled).length+' enabled':textState('devices'),available('devices')?'/tacacs/devices':'','devices:view'),
-        metric('AAA users seen',h?h.distinct_users:'—',h?'Command authorization log sample':textState('health'),available('health')?'/tacacs/aaa-health':'','accounting:view'),
+        metric('AAA users seen',h?h.distinct_users:'—',h?'Command records · last 24 hours, sampled':textState('health'),available('health')?'/tacacs/aaa-health':'','accounting:view'),
         metric('Active sessions',sessions?sessions.active_count:'—',sessions?'Correlated from accounting log tail':textState('sessions'),available('sessions')?'/tacacs/sessions':'','accounting:view'),
         metric('Authentication success',auth&&total?(100*auth.counts.success/total).toFixed(1)+'%':'—',auth?(total?total+' known outcomes · '+auth.counts.unknown+' unknown':'No known authentication outcomes')+' · 24h sample':textState('auth'),available('auth')?'/tacacs/access-events':'','accounting:view'),
         metric('Failed security checks',security&&security.devices_audited?security.failed_checks:'—',security?(security.devices_audited?security.devices_audited+' devices audited':'No completed audits'):textState('security'),available('security')?'/security/findings':'','security:view')
@@ -98,20 +98,20 @@
     }
     function renderHealth() {
       const tac=service('tac-plus-ng.service'),sys=data('system');
-      const dirAllowed=can('directory:check')&&destination('/platform/active-directory')&&!['forbidden','unlicensed'].includes(directory.state);
+      const dirAllowed=can('directory:check')&&destination('/platform/active-directory')&&!['forbidden','unlicensed','expired'].includes(directory.state);
       const dirButton=dirAllowed?button(directory.state==='loading'?'Checking…':'Check directory',checkDirectory,'btn-ghost'):null;
       if(dirButton)dirButton.disabled=directory.state==='loading';
       find('health').replaceChildren(
         healthItem('TACACS+ service',tac.label,tac.tone,'Process status',link('Inspect','/tacacs/aaa-health','accounting:view')),
-        healthItem('Directory',directory.state==='ok'?(directory.data.success?'Check passed':'Check failed'):'Unknown',directory.state==='ok'?(directory.data.success?'success':'warning'):'neutral',directory.checked?'Checked '+directory.checked:dirAllowed?'Connectivity check on demand':'No accessible directory check',dirButton),
+        healthItem('Directory',directory.state==='loading'?'Checking':directory.state==='ok'?(directory.data.success?'Check passed':'Check failed'):'Unknown',directory.state==='ok'?(directory.data.success?'success':'warning'):'neutral',(directory.checked?'Last attempt '+directory.checked+'. ':'')+({forbidden:'Permission denied',expired:'Session expired',error:'Check could not complete',unlicensed:'Not included in this license'}[directory.state]||(directory.state==='ok'?directory.data.message:dirAllowed?'Refreshes every 60 seconds':'No accessible directory check')),dirButton),
         healthItem('Database',sys?(sys.database==='connected'?'Connected':'Unavailable'):'Unknown',sys?(sys.database==='connected'?'success':'danger'):'neutral','Management database'),
         healthItem('Configuration management',available('ncm')?'Available':'Unknown',available('ncm')?'info':'neutral',available('ncm')?'Summary API responded':textState('ncm'),available('ncm')?link('Open NCM','/ncm/overview','ncm:view'):null),
         healthItem('Security Center',available('security')?'Available':'Unknown',available('security')?'info':'neutral',available('security')?'Summary API responded':textState('security'),available('security')?link('Open Security','/security/overview','security:view'):null)
       );
     }
     async function checkDirectory() {
-      if(directory.state==='loading'||!can('directory:check'))return;
-      directory={state:'loading'};renderHealth();
+      if(!alive||directory.state==='loading'||!can('directory:check')||!destination('/platform/active-directory')||['forbidden','unlicensed','expired'].includes(directory.state))return;
+      directory={...directory,state:'loading'};renderHealth();
       const result=await request('/api/ad-settings/health',d=>obj(d)&&typeof d.success==='boolean'&&typeof d.message==='string');
       if(!alive)return;directory={state:result.status,data:result.data,checked:new Date().toLocaleTimeString()};renderHealth();renderAttention();
     }
@@ -129,7 +129,7 @@
       const version=++chartVersion,wrap=find('activity'),h=data('health');if(chart){chart.destroy();chart=null;}
       if(!h){wrap.replaceChildren(placeholder('health','AAA activity'));return;}
       const points=h.hourly_activity,total=points.reduce((n,p)=>n+p.count,0);
-      if(!total){wrap.replaceChildren(empty('No command authorization activity','Events appear after devices send command authorization records. This chart uses a bounded log sample.'));return;}
+      if(!total){const w=h.activity_window;wrap.replaceChildren(empty('No command authorization activity',w?`No timestamped command records in the last ${w.hours} hours of the sampled log. ${w.outside_window} records outside the window; ${w.unknown_timestamp} with unknown timestamps.`:'No timestamped command records in the last 24 hours of the bounded log sample.'));return;}
       const canvas=node('canvas');canvas.setAttribute('role','img');canvas.setAttribute('aria-label',total+' command authorization records across '+points.length+' hourly buckets, last 24 hours, sampled log.');
       wrap.replaceChildren(canvas);
       try{await chartsLoaded();}catch(_){if(alive&&version===chartVersion)wrap.replaceChildren(empty('Chart unavailable',total+' command authorization records in the 24-hour sample.'),button('Retry chart',renderActivity));return;}
@@ -140,7 +140,7 @@
     function renderResults() {
       const wrap=find('results'),h=data('health');if(!h){wrap.replaceChildren(placeholder('health','Authorization results'));return;}
       const total=h.permit_count+h.non_permit_count;
-      if(!total){wrap.replaceChildren(empty('No authorization outcomes','No non-empty command decision results in the sampled log tail.'));return;}
+      if(!total){wrap.replaceChildren(empty('No authorization outcomes','No non-empty command decision results in the last 24 hours of the sampled log.'));return;}
       const heading=node('div','ops-outcome-total');append(heading,node('strong','',total.toLocaleString()),node('span','','recorded results'));
       const bar=node('div','ops-outcome-bar');bar.setAttribute('aria-hidden','true');
       for(const value of [h.permit_count,h.non_permit_count]){const part=node('span');part.style.width=(100*value/total)+'%';bar.append(part);}
@@ -254,8 +254,9 @@
       try{await Promise.allSettled(Object.keys(endpoints).map(load));if(alive)updateStamp();}
       finally{busy=false;if(alive){find('refresh').disabled=false;find('refresh').removeAttribute('aria-busy');}}
     }
-    AAAPlatform.onViewLeave(()=>{alive=false;chartVersion++;controllers.forEach(c=>c.abort());if(chart)chart.destroy();});
-    find('refresh').addEventListener('click',refresh);refresh();
+    const directoryTimer=setInterval(checkDirectory,60000);
+    AAAPlatform.onViewLeave(()=>{alive=false;clearInterval(directoryTimer);chartVersion++;controllers.forEach(c=>c.abort());if(chart)chart.destroy();});
+    find('refresh').addEventListener('click',refresh);refresh();checkDirectory();
   }
   window.NetOpsDashboard={mount};
 })();

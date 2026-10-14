@@ -14,12 +14,12 @@
 .ops-health-item p { margin:7px 0 0; font-size:11px; color:var(--text-muted); }
 .ops-health-item .btn-ghost { padding:2px 0; min-height:24px; font-size:11px; }
 .ops-metrics { grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; }
-.ops-metric { display:flex; flex-direction:column; gap:7px; text-decoration:none; color:var(--text-primary); min-height:111px; }
+.ops-metric { display:flex; flex-direction:column; gap:4px; text-decoration:none; color:var(--text-primary); min-height:82px; }
 .ops-metric-label { font-size:11px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:.6px; }
 .ops-metric .metric-value { line-height:1.15; }
 .ops-metric p { margin:0; font-size:11px; color:var(--text-muted); line-height:1.5; }
 .ops-grid { display:grid; grid-template-columns:minmax(0,1.25fr) minmax(0,1fr); gap:var(--space-4); align-items:stretch; }
-.ops-grid>.card { min-width:0; padding:var(--space-5); }
+.ops-grid>.card { min-width:0; padding:var(--space-4); }
 .ops-panel-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:16px; }
 .ops-panel-head h2 { font:600 15px/1.35 var(--font-ui); margin:0 0 4px; }
 .ops-panel-head p { margin:0; font-size:11px; }
@@ -29,7 +29,7 @@
 .ops-center .empty-state { padding:22px 12px; }
 .ops-center .empty-state p { margin-bottom:8px; font-size:12px; }
 .ops-results-body { min-height:208px; }
-.ops-outcome-total { display:flex; align-items:baseline; gap:10px; margin-bottom:22px; }
+.ops-outcome-total { display:flex; align-items:baseline; gap:10px; margin-bottom:12px; }
 .ops-outcome-total strong { font-size:32px; font-weight:650; }
 .ops-outcome-total span { color:var(--text-muted); font-size:12px; }
 .ops-outcome-bar { display:flex; height:12px; border-radius:var(--radius-sm); overflow:hidden; background:var(--bg-surface-raised); margin-bottom:16px; }

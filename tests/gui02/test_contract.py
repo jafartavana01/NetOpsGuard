@@ -28,9 +28,9 @@ class DashboardContracts(unittest.TestCase):
   caps=dashboard_capabilities(NS(is_superadmin=False,role_id=None),DB(None));self.assertTrue(caps['devices:write']);self.assertFalse(caps['directory:check'])
  def test_safe_dom_rendering(self):
   code=(ROOT/'app/static/js/pages/dashboard.js').read_text();self.assertNotIn('.innerHTML',code);self.assertIn('textContent',code)
- def test_manual_read_only_refresh(self):
+ def test_read_only_refresh_with_bounded_directory_polling(self):
   code=(ROOT/'app/static/js/pages/dashboard.js').read_text()
-  self.assertNotIn('setInterval',code);self.assertNotIn("method:'POST'",code);self.assertNotIn('/api/config/apply',code)
+  self.assertEqual(code.count('setInterval('),1);self.assertIn('setInterval(checkDirectory,60000)',code);self.assertIn('clearInterval(directoryTimer)',code);self.assertNotIn("method:'POST'",code);self.assertNotIn('/api/config/apply',code)
   self.assertIn('Promise.allSettled',code);self.assertIn('AbortController',code);self.assertIn('onViewLeave',code)
  def test_existing_security_contracts_not_reinterpreted(self):
   code=(ROOT/'app/static/js/pages/dashboard.js').read_text()

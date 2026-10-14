@@ -6,8 +6,8 @@ A = existing direct data. B = presentation-only aggregation. C = future/unavaila
 |---|---|---|---|
 | Services, DB, build | A | GET /api/system/status; routes_system.system_status | Observed process state / DB probe; not end-to-end AAA health |
 | Devices | B | GET /api/devices | Inventory length and enabled count; no online inference |
-| AAA users / outcomes | A/B | GET /api/tacacs-accounting/health?hours=24&limit=2000 | Command decision tail; non-permit is not necessarily deny; totals not 24h-filtered |
-| AAA chart | A | Same health API hourly_activity | Parsed timestamp buckets, last 24h, bounded sample |
+| AAA users / outcomes | A/B | GET /api/tacacs-accounting/health?hours=24&limit=2000 | Timestamped command decisions within the last 24h of the bounded tail; non-permit is not necessarily deny |
+| AAA chart | A | Same health API hourly_activity | UTC-normalized hourly buckets, rolling last 24h with partial edge buckets; activity_window reports excluded dates |
 | Sessions | A | GET /api/tacacs-accounting/sessions?active_only=true&limit=2000 | Accounting correlation, not live NAS proof |
 | Authentication rate | B | GET /api/tacacs-accounting/access-events?kind=authentication&limit=10&since=... | Success / known outcomes; unknown shown separately; bounded ACCESS sample |
 | Recent events | B | Above + kind=all authorization API | Merge timestamped samples; maximum 8; no invented session-start event |
@@ -16,10 +16,10 @@ A = existing direct data. B = presentation-only aggregation. C = future/unavaila
 | Recent snapshots | A | Same NCM overview | configurations_changed_recently counts stored snapshots, not actual differences |
 | Drift | A | GET /api/ncm/drift | Archived running config vs baseline; coverage gaps separate |
 | Candidate | A | GET /api/config/candidate | applicable, has_changes, diagnostics; no Apply mutation |
-| Directory | A | GET /api/ad-settings/health, on demand | Strict-superadmin LDAP connection check; no enumeration required for dashboard refresh |
+| Directory | A | GET /api/ad-settings/health, initial + every 60s + manual | Strict-superadmin saved-settings bind and base-object lookup; one browser request at a time; stopped on view leave |
 | Attention | B | Above available source observations | No new security decision engine; incomplete coverage disclosed |
 
-Source implementations: app/api/routes_accounting.py (accounting_health, list_sessions, access-events helpers), routes_security.py (get_security_dashboard), routes_ncm.py (get_overview/get_drift), routes_config.py (candidate), routes_ad_settings.py (health_check); existing log/session and ad_directory services. Existing API and service code is unchanged.
+Source implementations: app/api/routes_accounting.py (accounting_health, list_sessions, access-events helpers), routes_security.py (get_security_dashboard), routes_ncm.py (get_overview/get_drift), routes_config.py (candidate), routes_ad_settings.py (health_check); existing log/session and ad_directory services. Health statistics and hourly buckets use the same rolling time window. Log sampling is bounded; absence from the sample does not prove no activity.
 
 ## Future dashboard data contract (C)
 

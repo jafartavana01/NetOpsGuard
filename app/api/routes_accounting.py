@@ -251,16 +251,17 @@ def accounting_health(
     hours: int = Query(default=24, ge=1, le=168),
     _admin: AdminUser = Depends(require_permission("accounting:view")),
 ):
-    """PAM Expansion Plan §16-17: AAA Health + Failure Analysis,
-    computed server-side over the same parsed accounting records
-    every other view here reads -- see
-    app.services.accounting_log.compute_health_and_failure_stats for
-    exactly what is and isn't included, and why. Also includes an
-    hourly activity time series (compute_hourly_activity) for the
-    Dashboard's activity chart."""
+    """Command authorization statistics over a bounded log sample and rolling window.
+
+    Counts and UTC buckets share the same timestamped command records. Window
+    metadata explains records excluded for unknown timestamps or their age.
+    This endpoint does not measure authentication success or infer missing events.
+    """
     records = accounting_log.read_auth_records(limit=limit)
-    stats = accounting_log.compute_health_and_failure_stats(records)
-    stats["hourly_activity"] = accounting_log.compute_hourly_activity(records, hours=hours)
+    selected, window = accounting_log.activity_window(records, hours=hours)
+    stats = accounting_log.compute_health_and_failure_stats(selected)
+    stats["hourly_activity"] = accounting_log.compute_hourly_activity(selected, hours=hours, now=datetime.fromisoformat(window["end"]))
+    stats["activity_window"] = window
     return stats
 
 
