@@ -38,7 +38,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import security
-from ..models.audit_schedule_settings import AuditScheduleSettings
+from ..services import device_credentials
 from ..models.device import NetworkDevice
 from ..models.ncm import NcmCandidate, NcmConfiguration, NcmDeployment
 from . import ncm_archive, ncm_drivers, ssh_provision
@@ -193,7 +193,7 @@ def deploy_candidate(db: Session, candidate: NcmCandidate, *, actor: str | None)
     if not device:
         return DeployOutcome(ok=False, status=candidate.status, message="Device not found.")
 
-    settings = db.query(AuditScheduleSettings).first()
+    settings = device_credentials.get_settings(db)
     if not settings or not settings.ssh_username or not settings.ssh_password_encrypted:
         return DeployOutcome(
             ok=False, status=candidate.status,
@@ -234,12 +234,12 @@ def deploy_candidate(db: Session, candidate: NcmCandidate, *, actor: str | None)
     result = ssh_provision.apply_aaa_config(
         device.ip_address.split("/")[0].strip(), username, password, commands=wrapped,
     )
-    transcript = _sanitise_transcript("\n".join(result.command_log or []))
+    transcript = _sanitise_transcript("\n".join(result.command_log or []).replace(password, "[redacted]"))
     deployment.transcript = transcript
 
     if not result.success:
         deployment.status = "failed"
-        deployment.error_message = (result.message or "Deployment failed.")[:500]
+        deployment.error_message = (result.message or "Deployment failed.").replace(password, "[redacted]")[:500]
         deployment.completed_at = datetime.now(timezone.utc)
         candidate.status = STATUS_FAILED
         db.commit()
@@ -305,7 +305,7 @@ def rollback_deployment(db: Session, deployment: NcmDeployment, *, actor: str | 
     if not device:
         return DeployOutcome(ok=False, status=deployment.status, message="Device not found.")
 
-    settings = db.query(AuditScheduleSettings).first()
+    settings = device_credentials.get_settings(db)
     if not settings or not settings.ssh_username or not settings.ssh_password_encrypted:
         return DeployOutcome(ok=False, status=deployment.status,
                              message="No service account is configured, so the device cannot be reached.")
@@ -327,11 +327,11 @@ def rollback_deployment(db: Session, deployment: NcmDeployment, *, actor: str | 
     result = ssh_provision.apply_aaa_config(
         device.ip_address.split("/")[0].strip(), username, password, commands=wrapped,
     )
-    transcript = _sanitise_transcript("\n".join(result.command_log or []))
+    transcript = _sanitise_transcript("\n".join(result.command_log or []).replace(password, "[redacted]"))
 
     if not result.success:
         deployment.status = "rollback_failed"
-        deployment.error_message = (result.message or "Rollback failed.")[:500]
+        deployment.error_message = (result.message or "Rollback failed.").replace(password, "[redacted]")[:500]
         db.commit()
         return DeployOutcome(ok=False, status="rollback_failed", transcript=transcript,
                              message=deployment.error_message)

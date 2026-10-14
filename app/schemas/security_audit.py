@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class AuditUploadRequest(BaseModel):
@@ -23,8 +23,8 @@ class AuditUploadRequest(BaseModel):
 
 
 class AuditLiveRequest(BaseModel):
-    ssh_username: str = Field(min_length=1, max_length=128)
-    ssh_password: str = Field(min_length=1, max_length=256)
+    ssh_username: str | None = Field(default=None, min_length=1, max_length=128)
+    ssh_password: str | None = Field(default=None, min_length=1, max_length=256)
     connect_timeout_seconds: int | None = Field(default=None, ge=1, le=120)
     command_timeout_seconds: int | None = Field(default=None, ge=1, le=300)
 
@@ -160,8 +160,7 @@ class AuditScheduleOut(BaseModel):
 
 class AuditScheduleUpdateRequest(BaseModel):
     enabled: bool
-    ssh_username: str = Field(min_length=1, max_length=128)
-    ssh_password: str | None = Field(default=None, max_length=256, description="Leave blank to keep the current password.")
+    model_config = ConfigDict(extra="forbid")
     daily_run_time: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$", description="24-hour HH:MM, server-local time.")
     management_ip_note: str | None = Field(default=None, max_length=255)
 

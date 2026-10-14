@@ -6,6 +6,7 @@
 {% block view_content %}
 <main class="content ops-workspace">
   {% include "partials/operations_workspace.html" %}
+  <p id="ncm-credential-status" role="status">Loading SSH credential status…</p>
   <div class="content-head" style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
     <div>
       <h1>Configuration Management</h1>
@@ -38,7 +39,7 @@
     <h2>Backup Now</h2>
     <div class="panel panel-wide" style="margin-bottom:14px;">
       <div class="panel-body" style="font-size:12px;color:var(--text-dim);">
-        Devices are reached over SSH using the platform's own service account — configure it under <a href="/security/schedule">Scheduled Audits</a> if you haven't. A snapshot is archived only if the configuration actually changed; the backup itself is always recorded.
+        Devices are reached over SSH using the platform's own service account — configure it under <a href="/platform/device-credentials">System → Device Credentials</a> if you haven't. A snapshot is archived only if the configuration actually changed; the backup itself is always recorded.
       </div>
     </div>
 
@@ -83,7 +84,7 @@
 {% endblock %}
 
 {% block view_scripts %}
-<script>OpsUI.mount();</script>
+<script>OpsUI.mount();(()=>{let alive=true;const target=document.getElementById('ncm-credential-status');AAAPlatform.onViewLeave(()=>alive=false);OpsUI.request('/api/ncm/credentials/status').then(s=>{if(alive)target.textContent=typeof s?.configured==='boolean'?(s.configured?'SSH service account configured':'SSH service account required — configure System → Device Credentials.'):'SSH credential status unavailable.';}).catch(()=>{if(alive)target.textContent='SSH credential status unavailable.';});})();</script>
 <script>
 (() => {
   const ICON_SERVER = '{{ icons.icon("server", 16) }}';

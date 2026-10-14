@@ -72,6 +72,7 @@ _SECTION_BY_PATH: dict[str, tuple[str, list[str]]] = {
     "/tacacs/groups": ("identity", ["group", "groups", "tacacs group"]),
     "/platform/admin-users": ("identity", ["admin", "admin user", "administrator", "platform user"]),
     "/platform/admin-roles": ("identity", ["role", "roles", "permission", "permissions", "rbac"]),
+    "/platform/device-credentials": ("system", ["ssh", "credentials", "service account", "password"]),
     "/platform/active-directory": ("identity", ["ad", "active directory", "ldap", "directory"]),
 
     # ---- TACACS+ / RADIUS ----

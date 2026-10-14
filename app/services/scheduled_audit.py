@@ -38,7 +38,7 @@ from .. import security
 from ..database import get_sessionmaker
 from ..models.audit_batch import AuditBatch
 from ..models.audit_run import AuditRun
-from ..models.audit_schedule_settings import AuditScheduleSettings
+from ..services import device_credentials
 from ..models.device import NetworkDevice
 from ..security_center.engine.orchestrator import run_device_audit
 from . import network_ops_execution
@@ -170,10 +170,11 @@ def run_scheduled_audit(
             result.succeeded += 1
         except Exception as exc:
             run.status = "failed"
-            run.error_message = str(exc)
+            message = str(exc).replace(ssh_password, "[redacted]") if ssh_password else "SSH audit failed."
+            run.error_message = message
             db.commit()
             result.failed += 1
-            result.failures.append(f"{device.name}: {exc}")
+            result.failures.append(f"{device.name}: {message}")
 
     batch.devices_succeeded = result.succeeded
     batch.devices_failed = result.failed
@@ -222,7 +223,7 @@ def _poll_once() -> None:
     session_local = get_sessionmaker()
     db: Session = session_local()
     try:
-        settings = db.query(AuditScheduleSettings).first()
+        settings = device_credentials.get_settings(db)
         if settings and settings.enabled and settings.ssh_username and settings.ssh_password_encrypted:
             now = datetime.now(timezone.utc)
             if should_run_now(settings.daily_run_time, settings.last_run_at, now):

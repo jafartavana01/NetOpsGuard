@@ -21,6 +21,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from ..api.routes_ad_settings import router as ad_settings_router
+from ..api.routes_device_credentials import router as device_credentials_router
 from ..api.routes_admin_roles import router as admin_roles_router
 from ..api.routes_admin_users import router as admin_users_router
 from ..api.routes_license import router as license_router
@@ -38,6 +39,7 @@ _core_router.include_router(platform_settings_router)
 _core_router.include_router(modules_router)
 _core_router.include_router(license_router)
 _core_router.include_router(ad_settings_router)
+_core_router.include_router(device_credentials_router)
 
 
 def _build_core_module() -> Module:
@@ -61,6 +63,7 @@ def _build_core_module() -> Module:
                 children=[
                     NavEntry(label="Admin Users", path="/platform/admin-users"),
                     NavEntry(label="Admin Roles", path="/platform/admin-roles"),
+                    NavEntry(label="Device Credentials", path="/platform/device-credentials", requires_superadmin=True),
                     NavEntry(label="Active Directory", path="/platform/active-directory"),
                     NavEntry(label="Settings", path="/platform/settings"),
                     NavEntry(label="Modules", path="/platform/modules", requires_superadmin=True),

@@ -1,6 +1,10 @@
 """
 app.models.audit_schedule_settings
 =====================================
+Compatibility storage: SSH columns are owned exclusively by
+app.services.device_credentials; schedule/history columns by Security Center.
+Keeping these columns preserves installed encrypted accounts without migration.
+
 Settings for automatic, unattended Security Center auditing: a single
 platform-owned SSH service account (used for every scheduled run,
 across every device, rather than requiring a human to type

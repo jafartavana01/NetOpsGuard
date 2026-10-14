@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from .. import security
 from ..database import get_db
 from ..models.admin import AdminUser
-from ..models.audit_schedule_settings import AuditScheduleSettings
+from ..services import device_credentials
 from ..models.device import NetworkDevice
 from ..models.device_group import DeviceGroup
 from ..models.ncm import (
@@ -334,11 +334,11 @@ def run_backup(
 
     types = [t.strip() for t in payload.configuration_types if t.strip()] or ["running"]
 
-    settings = db.query(AuditScheduleSettings).first()
+    settings = device_credentials.get_settings(db)
     if not settings or not settings.ssh_username or not settings.ssh_password_encrypted:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            detail="No backup service account is configured. Set one up under Security Center → Scheduled Audits first.",
+            detail="No backup service account is configured. Set one up under System → Device Credentials first.",
         )
 
     devices = ncm_backup.resolve_target_devices(
@@ -1015,3 +1015,9 @@ def detailed_diff(
             for c in detail.changes
         ],
     )
+
+
+@router.get("/credentials/status")
+def credential_status(db: Session = Depends(get_db), _admin: AdminUser = Depends(require_permission("ncm:view"))):
+    """Status only: NCM viewers cannot retrieve the username or credential token."""
+    return {'configured': device_credentials.configured(device_credentials.get_settings(db))}

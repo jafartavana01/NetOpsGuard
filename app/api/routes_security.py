@@ -18,6 +18,9 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.routing import APIRoute
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from .. import security
@@ -26,6 +29,7 @@ from ..models.admin import AdminUser
 from ..models.audit_batch import AuditBatch
 from ..models.audit_run import AuditComplianceResult, AuditDomainScore, AuditFinding, AuditRun
 from ..models.audit_schedule_settings import AuditScheduleSettings
+from ..services import device_credentials
 from ..models.device import NetworkDevice
 from ..schemas.security_audit import (
     AuditBatchSummaryListItemOut, AuditBatchSummaryOut, AuditCompareOut, AuditLiveRequest, AuditRunDetailOut,
@@ -45,7 +49,22 @@ from ..services.scheduled_audit import run_scheduled_audit
 from ..services.security_audit_persistence import hash_config_text, persist_audit_result
 from .deps import get_current_superadmin, require_permission, verify_csrf
 
-router = APIRouter(prefix="/api/security", tags=["security-center"])
+class SecretSafeRoute(APIRoute):
+    def get_route_handler(self):
+        handler = super().get_route_handler()
+        async def safe_handler(request):
+            try:
+                return await handler(request)
+            except RequestValidationError as exc:
+                # Validation errors must not echo explicit/legacy SSH passwords.
+                return JSONResponse(status_code=422, content={"detail": [
+                    {"loc": e["loc"], "type": e["type"], "msg": e["msg"]}
+                    for e in exc.errors()
+                ]})
+        return safe_handler
+
+
+router = APIRouter(prefix="/api/security", tags=["security-center"], route_class=SecretSafeRoute)
 
 
 def _get_device_or_404(db: Session, device_id: str) -> NetworkDevice:
@@ -202,6 +221,10 @@ def audit_live_device(
     from ..services import network_ops_execution
 
     device = _get_device_or_404(db, device_id)
+    if bool(payload.ssh_username) != bool(payload.ssh_password):
+        raise HTTPException(400, "Supply both explicit SSH credentials or omit both to use Device Credentials.")
+    username, password = ((payload.ssh_username, payload.ssh_password) if payload.ssh_username
+                          else device_credentials.resolve(db))
     run = _create_running_audit_row(db, device=device, device_name=device.name, source="live", started_by=admin.username)
 
     exec_kwargs = {}
@@ -211,7 +234,7 @@ def audit_live_device(
         exec_kwargs["command_timeout_seconds"] = payload.command_timeout_seconds
 
     exec_result = network_ops_execution.run_commands_on_device(
-        _bare_ip(device), payload.ssh_username, payload.ssh_password, ["terminal length 0", "show running-config"],
+        _bare_ip(device), username, password, ["terminal length 0", "show running-config"],
         **exec_kwargs,
     )
     if not exec_result.success or not exec_result.command_results:
@@ -452,12 +475,9 @@ def security_overview(
 
 
 def _get_or_create_schedule_settings(db: Session) -> AuditScheduleSettings:
-    settings = db.query(AuditScheduleSettings).first()
-    if settings is None:
-        settings = AuditScheduleSettings()
-        db.add(settings)
-        db.commit()
-        db.refresh(settings)
+    settings = device_credentials.ensure_settings(db)
+    db.commit()
+    db.refresh(settings)
     return settings
 
 
@@ -487,10 +507,9 @@ def update_schedule_settings(
     _admin: AdminUser = Depends(get_current_superadmin),
 ):
     s = _get_or_create_schedule_settings(db)
+    if payload.enabled and not device_credentials.configured(s):
+        raise HTTPException(400, device_credentials.REQUIRED)
     s.enabled = payload.enabled
-    s.ssh_username = payload.ssh_username
-    if payload.ssh_password:
-        s.ssh_password_encrypted = security.encrypt_secret(payload.ssh_password)
     s.daily_run_time = payload.daily_run_time
     s.management_ip_note = payload.management_ip_note
     db.commit()
@@ -516,7 +535,7 @@ def run_schedule_now(
     """
     s = _get_or_create_schedule_settings(db)
     if not s.ssh_username or not s.ssh_password_encrypted:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Set a username and password first.")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=device_credentials.REQUIRED)
 
     result = run_scheduled_audit(
         db, ssh_username=s.ssh_username, ssh_password_encrypted=s.ssh_password_encrypted, batch_source="manual",
@@ -1033,7 +1052,7 @@ def run_bulk_audit(
     numbered Audit Report the same way the scheduled fleet job does --
     same pipeline, same batch model, just a narrower device list.
 
-    Uses the platform's stored service account (Scheduled Audits) for
+    Uses the platform's stored service account (Device Credentials) for
     SSH rather than prompting per run: that account exists precisely so
     unattended/bulk auditing doesn't require a human to re-enter
     credentials per device. If it isn't configured, this fails with a
@@ -1043,11 +1062,11 @@ def run_bulk_audit(
     Gated on `security:audit` (not `security:view`) since this reaches
     out and touches real devices.
     """
-    settings = db.query(AuditScheduleSettings).first()
+    settings = device_credentials.get_settings(db)
     if not settings or not settings.ssh_username or not settings.ssh_password_encrypted:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            detail="No audit service account is configured. Set one up under Security Center → Scheduled Audits first.",
+            detail="No audit service account is configured. Set one up under System → Device Credentials first.",
         )
 
     try:

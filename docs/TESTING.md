@@ -91,3 +91,17 @@ Coverage includes real-format authorization records, fractional timezone offsets
 GUI-07.1 verification: 14 activity tests and 47 browser checks passed. Existing GUI-01–07 and policy/restoration/dependency browser suites passed 857 checks; GUI-06 required an isolated rerun after a timing-sensitive first-run failure. F03 remains 189 PASS / 13 XFAIL; `--no-xfail` exposes the same 13 failures. The older manual-only dashboard expectation was updated to require one initial check and one cleaned-up 60-second interval. Security assertions were retained.
 
 PostgreSQL suites skipped 57 tests without a disposable test DSN. Native Cisco, tac_plus-ng/MAVIS, and directory tests remain unverified. Browser cancellation does not prove an in-flight LDAP operation has stopped on the server. Known functional and security defects listed above remain open.
+
+## Centralized device credential tests
+
+```sh
+python tests/gui072/test_credentials.py
+python tests/gui072/postgres_integration.py
+node tests/gui072/browser.cjs
+```
+
+The backend suite uses real SQLite transactions and Fernet encryption with temporary keys. SSH and job execution are mocked: passing consumer tests does not prove scheduler reliability or device connectivity. PostgreSQL runs the same storage/API contracts in a private schema when a disposable `F03_POSTGRES_DSN` is provided; otherwise it skips explicitly.
+
+The browser suite uses the actual templates on loopback port 8773 with synthetic API responses. It requires Playwright, `GUI_CHROMIUM`, and the existing Python test dependencies. It covers password retention/rotation, stale updates, error/denied states, in-flight controls, navigation cleanup, and compact layouts; it produces no evidence archives. The existing Security Center browser test now verifies that credentials cannot be edited on Scheduled Audits and that discarding schedule changes restores the server-confirmed time.
+
+GUI-07.2 verification: 34 backend tests and 26 browser checks passed. Existing GUI-01–07.1, atomic-policy, restoration, and dependency browser suites passed 904 checks. Existing project scripts and authorization/CSRF checks passed; F03 remains 189 PASS / 13 XFAIL, with those same 13 failures exposed by `--no-xfail`. PostgreSQL suites skipped 91 tests (34 credential tests and 57 existing tests) without a disposable DSN. Real SSH/Cisco testing was not performed.

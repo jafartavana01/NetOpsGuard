@@ -356,7 +356,8 @@ def run_commands_on_device(
     except paramiko.AuthenticationException:
         return DeviceExecutionResult(success=False, message="SSH authentication failed -- check the username and password.", command_results=results)
     except Exception as exc:
-        return DeviceExecutionResult(success=False, message=f"Could not connect: {exc}", command_results=results)
+        message = str(exc).replace(password, "[redacted]") if password else "Connection failed."
+        return DeviceExecutionResult(success=False, message="Could not connect: " + message, command_results=results)
     finally:
         client.close()
 

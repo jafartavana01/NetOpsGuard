@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 
 from .. import security
 from ..database import get_sessionmaker
-from ..models.audit_schedule_settings import AuditScheduleSettings
+from ..services import device_credentials
 from ..models.ncm import NcmBackupSchedule
 from . import ncm_backup
 
@@ -127,7 +127,7 @@ def _poll_once() -> None:
     session_local = get_sessionmaker()
     db: Session = session_local()
     try:
-        settings = db.query(AuditScheduleSettings).first()
+        settings = device_credentials.get_settings(db)
         have_credentials = bool(settings and settings.ssh_username and settings.ssh_password_encrypted)
 
         schedules = db.query(NcmBackupSchedule).filter(NcmBackupSchedule.enabled.is_(True)).all()

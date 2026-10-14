@@ -66,3 +66,17 @@ Policy snapshots that cannot reconstruct their scope are not restorable. Full co
 - Authentication-time directory failure and native command authorization should be tested in the deployment's actual directory/NAS environment.
 
 These limitations are not removed by successful GUI tests or by atomic policy persistence.
+
+## Shared network device SSH credentials
+
+A superadmin configures **System → Device Credentials**. This account is used for manual and scheduled NCM backups, NCM deployment/rollback and their backup checks, scheduled and bulk Security Center audits, and individual live audits by default. Network discovery and general command jobs retain their explicit per-request credentials. This account is separate from TACACS+ and RADIUS shared secrets and from the AD bind account.
+
+Existing installations keep their encrypted account in place; no password re-entry or secret migration is required. Enter a username and a password for the first setup. On later saves, leave the replacement password blank to retain the saved password. The browser never receives the stored password or its encrypted value. If another administrator changes the account first, reload the saved state and review your intended change before retrying. Credential-specific modification time and editor are not available in the existing storage.
+
+Saving validates the settings but does not test SSH connectivity or device privileges. Review the next backup/audit result against an authorized device. Existing SSH host-key behavior is unchanged. A running job may finish with the credentials it loaded before a rotation; subsequent runs load the saved account.
+
+**Scheduled Audits** controls the schedule and displays execution history and credential status. It no longer accepts username/password updates. NCM overview and backup schedules show credential status; only superadmins can open the credential editor. Operators who cannot edit settings should ask a superadmin to configure the account.
+
+For API clients, `GET /api/device-credentials` returns non-secret settings and a revision token. Superadmins use `PUT /api/device-credentials` with `username`, `password` (null/blank preserves it), and the latest `revision`, with the existing CSRF header. Stale revisions return 409. Remove credential fields from `PUT /api/security/schedule`; these fields now return 422 instead of changing the shared account. Individual `/api/security/devices/{id}/audit/live` requests may omit both credentials to use the shared account or supply both explicitly. Audit permission and CSRF requirements remain unchanged.
+
+Restart all application workers when upgrading; do not run old scheduling writers alongside the new credential editor. Downgrading restores the old credential-editing interface and loses the new stale-update protection. Schedule reliability, audit-comparison correctness, directory certificate verification, and role-deletion fallback are separate unresolved issues.

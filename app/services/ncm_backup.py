@@ -132,14 +132,14 @@ def _retrieve_one(work: _DeviceWork, configuration_type: str, username: str, pas
             "device_id": work.device_id, "device_name": work.device_name,
             "ok": result.ok, "content": result.content,
             "connection_ok": result.connection_ok, "retrieval_ok": result.retrieval_ok,
-            "error": result.error,
+            "error": (result.error or "").replace(password, "[redacted]") if password else result.error,
         }
     except Exception as exc:  # noqa: BLE001 -- deliberately broad; see docstring
-        logger.exception("NCM backup failed for %s", work.device_name)
+        logger.warning("NCM backup failed for %s", work.device_name)
         return {
             "device_id": work.device_id, "device_name": work.device_name,
             "ok": False, "content": "", "connection_ok": False, "retrieval_ok": False,
-            "error": _safe_error(exc),
+            "error": _safe_error(str(exc).replace(password, "[redacted]") if password else "SSH retrieval failed."),
         }
 
 

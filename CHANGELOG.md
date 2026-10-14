@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased — Compact interface and dashboard corrections
+## Unreleased — Centralized device credentials
+
+- System → Device Credentials manages the shared SSH service account independently of audit schedules. Existing encrypted passwords and execution history are preserved without re-entry.
+- Blank password replacement retains the saved secret; stale concurrent changes are rejected. Credential settings remain superadmin-only and protected against CSRF.
+- Individual live security audits use the saved account by default; callers can still supply an explicit username/password pair with the existing audit permission.
+- Audit scheduling no longer edits credentials. NCM and audit screens point to the central settings; NCM viewers receive configuration status only.
+- Credential validation errors and SSH job failure messages avoid echoing supplied passwords. Saving settings is not an SSH connectivity test.
+
+## Compact interface and dashboard corrections
 
 - Compact table rows, controls, cards, and toolbars retain the existing visual identity and readable text. Device and Policy actions stay on one line inside scrollable tables.
 - AAA hourly activity normalizes timezone offsets before grouping. Authorization totals and hourly activity now share the selected rolling time window; empty activity explains out-of-window and unknown timestamps.

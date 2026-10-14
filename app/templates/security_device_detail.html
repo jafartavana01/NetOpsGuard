@@ -84,6 +84,7 @@
     </div>
 
     <div id="audit-live-fields">
+      <p>Leave both fields blank to use the saved SSH service account. {% if is_superadmin %}<a href="/platform/device-credentials">Configure Device Credentials</a>.{% else %}Ask an administrator to configure Device Credentials if needed.{% endif %}</p>
       <label class="field">
         <span class="field-label">SSH username</span>
         <div class="field-icon-wrap">
@@ -568,8 +569,8 @@
     if (isLive) {
       const sshUsername = document.getElementById('audit-ssh-username').value;
       const sshPassword = document.getElementById('audit-ssh-password').value;
-      if (!sshUsername || !sshPassword) {
-        errorBox.textContent = 'SSH username and password are required.';
+      if (!!sshUsername !== !!sshPassword) {
+        errorBox.textContent = 'Supply both credentials or leave both blank to use Device Credentials.';
         errorBox.hidden = false;
         return;
       }
@@ -577,7 +578,7 @@
       btn.textContent = 'Connecting and auditing…';
       res = await SecurityUI.safeFetch('/api/security/devices/' + deviceId + '/audit/live', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ssh_username: sshUsername, ssh_password: sshPassword }),
+        body: JSON.stringify(sshUsername ? { ssh_username: sshUsername, ssh_password: sshPassword } : {}),
       });
     } else {
       const configText = document.getElementById('audit-config-text').value.trim();

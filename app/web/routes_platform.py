@@ -116,3 +116,8 @@ def modules_page(
     # Superadmin-only, matching the API: toggling a module changes
     # which routers the application mounts at startup.
     return _render(request, session_token, "modules.html", require_superadmin=True)
+
+
+@router.get("/platform/device-credentials", response_class=HTMLResponse)
+def device_credentials_page(request: Request, session_token: str | None = Cookie(default=None, alias=security.SESSION_COOKIE_NAME)):
+    return _render(request, session_token, "device_credentials.html", require_superadmin=True)
