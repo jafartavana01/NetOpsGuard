@@ -1,171 +1,192 @@
-"""
-app.services.ncm_scheduler
-=============================
-Executes NCM backup schedules (Phase 3).
+"""UTC daily backups with durable checkpoints and cross-process ownership.
 
-Reuses the scheduling approach this project already established for
-scheduled security audits (app.services.scheduled_audit): a plain
-asyncio background task started from app.main's startup event, polling
-on an interval. No Celery, Redis, RabbitMQ or container runtime is
-introduced -- the platform targets a native Ubuntu install and stays
-operationally simple, and a single "wake up, check, maybe run" loop
-covers a daily schedule without a job-queue dependency.
-
-Schedules live in PostgreSQL (app.models.ncm.NcmBackupSchedule), never
-in browser memory, so they survive application restarts. `last_run_at`
-is persisted, which is what stops a restart mid-day from re-running a
-schedule that already completed.
+Catch up the most recent due occurrence only. Failed/interrupted occurrences
+are not automatically replayed; Run Now is an explicit retry. Locks survive
+commits, and the OS/database releases them after process death.
 """
 from __future__ import annotations
-
 import asyncio
 import logging
-from datetime import datetime, timezone
+import re
+import uuid
+from datetime import datetime, timedelta, timezone
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from .. import security
 from ..database import get_sessionmaker
-from ..services import device_credentials
-from ..models.ncm import NcmBackupSchedule
-from . import ncm_backup
+from ..models.ncm import NcmBackupSchedule, NcmScheduleState, NcmBackupJob
+from . import device_credentials, ncm_backup, ncm_lock
 
 logger = logging.getLogger(__name__)
-
-_POLL_INTERVAL_SECONDS = 300  # 5 minutes -- same cadence as the audit
-# scheduler: close enough to honour a daily time within a few minutes,
-# far cheaper than the backup run it guards.
+_POLL_INTERVAL_SECONDS = 30
 
 
-def _split_ids(raw: str) -> list:
-    """Parses a stored comma-separated UUID list, skipping anything
-    malformed rather than failing the whole schedule -- a single bad
-    id should not stop every other target from being backed up."""
-    import uuid as _uuid
-
-    out = []
-    for chunk in (raw or "").split(","):
-        chunk = chunk.strip()
-        if not chunk:
-            continue
-        try:
-            out.append(_uuid.UUID(chunk))
-        except ValueError:
-            logger.warning("Skipping malformed target id in NCM schedule.")
-    return out
+def utc(value):
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
 
-def should_run_now(daily_run_time: str, last_run_at: datetime | None, now: datetime) -> bool:
-    """
-    True when the configured time has passed today and this schedule
-    has not already run today. Compared by DATE, not exact time,
-    because this is polled on an interval rather than fired at the
-    precise minute. Pure function so it is testable without a
-    database, a clock, or a device.
-    """
+def due_slot(daily_run_time, now):
+    if not isinstance(daily_run_time, str) or not re.fullmatch(r'([01]\d|2[0-3]):[0-5]\d', daily_run_time):
+        raise ValueError('Invalid daily time; edit the schedule using HH:MM UTC.')
+    now = utc(now)
+    hour, minute = map(int, daily_run_time.split(':'))
+    slot = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    return slot if slot <= now else slot - timedelta(days=1)
+
+
+def should_run_now(daily_run_time, last_run_at, now):
     try:
-        run_hour, run_minute = (int(part) for part in daily_run_time.split(":"))
-    except (ValueError, AttributeError):
-        logger.warning("NCM schedule has an unparseable run time; skipping it.")
+        slot = due_slot(daily_run_time, now)
+    except ValueError:
         return False
-
-    scheduled_today = now.replace(hour=run_hour, minute=run_minute, second=0, microsecond=0)
-    if now < scheduled_today:
-        return False
-    if last_run_at is not None and last_run_at.date() == now.date():
-        return False
-    return True
+    return last_run_at is None or utc(last_run_at) < slot
 
 
-def run_due_schedule(db: Session, schedule: NcmBackupSchedule, *, ssh_username: str, ssh_password: str) -> None:
-    """Runs one schedule now. Marks `last_run_at` even on failure, so a
-    persistently broken schedule retries tomorrow rather than looping
-    every poll interval for the rest of the day."""
-    devices = ncm_backup.resolve_target_devices(
-        db, _split_ids(schedule.device_ids), _split_ids(schedule.device_group_ids)
-    )
-    types = [t.strip() for t in (schedule.configuration_types or "running").split(",") if t.strip()]
+def _split_ids(raw):
+    return [uuid.UUID(item.strip()) for item in (raw or '').split(',') if item.strip()]
 
+
+def next_due(schedule, state, now=None):
+    if not schedule.enabled:
+        return None
+    now = utc(now or datetime.now(timezone.utc))
     try:
-        outcome = ncm_backup.run_backup(
-            db, devices=devices, configuration_types=types,
-            ssh_username=ssh_username, ssh_password=ssh_password,
-            source="scheduled", started_by="(scheduled)",
-            schedule_id=schedule.id, schedule_name=schedule.name,
-        )
-        logger.info(
-            "NCM schedule '%s' finished: %s/%s devices, %s changed.",
-            schedule.name, outcome.succeeded, outcome.total, outcome.changed,
-        )
-    finally:
-        schedule.last_run_at = datetime.now(timezone.utc)
+        slot = due_slot(schedule.daily_run_time, now)
+    except ValueError:
+        return None
+    checkpoint = state.last_slot if state else schedule.last_run_at
+    if (checkpoint and utc(checkpoint) >= slot) or (schedule.created_at and utc(schedule.created_at) > slot):
+        slot += timedelta(days=1)
+    return slot
+
+
+def recover(db, state, now):
+    """Called ONLY after obtaining the schedule lock: no live owner remains."""
+    if state and state.status == 'running':
+        job = db.get(NcmBackupJob, state.job_id) if state.job_id else None
+        if job and job.status in ('completed', 'partial_success', 'failed', 'blocked'):
+            state.status = job.status
+            state.total, state.succeeded, state.failed = job.total_devices, job.succeeded, job.failed
+            state.completed_at = job.completed_at or now
+            if job.status == 'completed':
+                state.succeeded_at = state.completed_at
+            state.error = None if job.status == 'completed' else 'Review the previous backup job results.'
+        else:
+            state.status = 'failed'
+            state.error = 'Previous execution was interrupted. Review its job before using Run Now.'
+            state.completed_at = now
+            if job:
+                job.status = 'failed'
+                job.completed_at = now
         db.commit()
 
 
-def _poll_once() -> None:
-    """
-    One scheduler tick, executed ENTIRELY inside a worker thread.
 
-    Everything here is blocking: opening a session, querying, and the
-    SSH backups themselves. None of it may touch the event loop.
+def run_schedule(db, schedule_id, *, now=None, manual=False, actor=None):
+    now = utc(now or datetime.now(timezone.utc))
+    with ncm_lock.hold(db, 'schedule:' + str(schedule_id)):
+        db.expire_all()
+        schedule = db.get(NcmBackupSchedule, schedule_id)
+        if not schedule:
+            raise HTTPException(404, 'Schedule not found.')
+        state = db.get(NcmScheduleState, schedule_id)
+        recover(db, state, now)
+        if not schedule.enabled:
+            if manual:
+                raise HTTPException(409, 'Enable the schedule before running it.')
+            return state
+        invalid_time = None
+        try:
+            slot = due_slot(schedule.daily_run_time, now)
+        except ValueError as exc:
+            invalid_time = str(exc)
+            slot = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        checkpoint = state.last_slot if state else schedule.last_run_at
+        if not manual and ((checkpoint and utc(checkpoint) >= slot) or
+                           (not invalid_time and schedule.created_at and utc(schedule.created_at) > slot)):
+            return state
+        # Obtain the writer BEFORE claiming. A busy writer defers this occurrence
+        # without recording a false failure or consuming its daily checkpoint.
+        with ncm_lock.hold(db, 'backup-writer'):
+            if state is None:
+                state = NcmScheduleState(schedule_id=schedule.id)
+                db.add(state)
+            state.last_slot = slot
+            state.status = 'running'
+            state.attempted_at = now
+            state.completed_at = None
+            state.error = None
+            state.total = state.succeeded = state.failed = 0
+            job = NcmBackupJob(display_number=ncm_backup._next_job_number(db), source='scheduled',
+                               status='running', started_by=actor or '(scheduled)',
+                               schedule_id=schedule.id, schedule_name=schedule.name, total_devices=0)
+            db.add(job)
+            db.flush()
+            state.job_id = job.id
+            schedule.last_run_at = now
+            db.commit()
+            try:
+                if invalid_time:
+                    raise HTTPException(400, invalid_time)
+                username, password = device_credentials.resolve(db)
+                devices = ncm_backup.resolve_target_devices(db, _split_ids(schedule.device_ids), _split_ids(schedule.device_group_ids))
+                if not devices:
+                    raise HTTPException(400, 'No enabled inventory devices match the configured targets. Review devices and groups.')
+                types = [x.strip() for x in (schedule.configuration_types or '').split(',') if x.strip()]
+                if not types or any(x not in ('running', 'startup') for x in types):
+                    raise HTTPException(400, 'Unsupported backup type. Select running and/or startup configuration.')
+                job.total_devices = state.total = len(devices)
+                db.commit()
+                outcome = ncm_backup._run_backup(db, devices=devices, configuration_types=list(dict.fromkeys(types)),
+                    ssh_username=username, ssh_password=password, source='scheduled', started_by=job.started_by, job=job)
+                state.status = outcome.status
+                state.total, state.succeeded, state.failed = outcome.total, outcome.succeeded, outcome.failed
+                state.error = 'Some device backups failed; open the backup job for per-device results.' if outcome.failed else None
+                if outcome.status == 'completed':
+                    state.succeeded_at = job.completed_at or now
+                db.commit()
+                from .ncm_retention import prune
+                try:
+                    prune(db, schedule, now)
+                except Exception:
+                    db.rollback()
+                    state.error = 'Backup result recorded, but retention cleanup failed. Review database availability and retention settings.'
+            except HTTPException as exc:
+                db.rollback()
+                state.status = job.status = 'blocked'
+                state.error = exc.detail
+            except Exception:
+                db.rollback()
+                state.status = job.status = 'failed'
+                state.error = 'Backup execution failed. Review inventory, credentials and database availability before retrying.'
+                logger.warning('NCM schedule execution failed (schedule %s).', schedule_id)
+            state.completed_at = datetime.now(timezone.utc)
+            job.completed_at = state.completed_at
+            db.commit()
+            return state
 
-    Two bugs this shape fixes, both of which took the web server down
-    while leaving the process alive:
 
-      * The DB queries used to run directly in the coroutine. A
-        synchronous query blocks the event loop for its duration, and
-        if the connection pool is exhausted `session_local()` blocks
-        FOREVER -- the process keeps running and answering nothing,
-        which is exactly the "service up, pages dead" symptom.
-      * A Session created on the event-loop thread was passed into
-        `asyncio.to_thread`. SQLAlchemy sessions are not thread-safe;
-        the same mistake ncm_backup deliberately avoids by having its
-        worker threads return plain dicts.
-
-    The session is now created, used and closed on one thread.
-    """
+def _poll_once(now=None):
+    now = utc(now or datetime.now(timezone.utc))
     session_local = get_sessionmaker()
-    db: Session = session_local()
-    try:
-        settings = device_credentials.get_settings(db)
-        have_credentials = bool(settings and settings.ssh_username and settings.ssh_password_encrypted)
-
-        schedules = db.query(NcmBackupSchedule).filter(NcmBackupSchedule.enabled.is_(True)).all()
-        now = datetime.now(timezone.utc)
-        due = [s for s in schedules if should_run_now(s.daily_run_time, s.last_run_at, now)]
-
-        if due and not have_credentials:
-            # Never silently skip: an admin who configured a schedule
-            # but no service account needs to know why nothing is
-            # being backed up.
-            logger.warning(
-                "%s NCM schedule(s) are due but no backup service account is configured; skipping.", len(due)
-            )
-        elif due:
-            password = security.decrypt_secret(settings.ssh_password_encrypted)
-            for schedule in due:
-                run_due_schedule(
-                    db, schedule,
-                    ssh_username=settings.ssh_username, ssh_password=password,
-                )
-    finally:
-        db.close()
+    with session_local() as db:
+        ids = [row.id for row in db.query(NcmBackupSchedule).all()]
+    for schedule_id in ids:
+        try:
+            with session_local() as db:
+                run_schedule(db, schedule_id, now=now)
+        except ncm_lock.Busy:
+            continue
+        except Exception:
+            # No SQL parameters/tracebacks: exceptions may contain secret context.
+            logger.warning('NCM schedule could not be evaluated (schedule %s); retrying next poll.', schedule_id)
 
 
-async def scheduler_loop() -> None:
-    """
-    Runs for the process lifetime, started once from app.main.
-
-    The coroutine itself does nothing blocking: the entire tick is
-    handed to a thread, so neither a slow query nor a fleet-wide backup
-    can stall the web server.
-    """
+async def scheduler_loop():
     while True:
         try:
             await asyncio.to_thread(_poll_once)
         except Exception:
-            # A failure in the loop's own bookkeeping must never kill
-            # it -- a scheduler that silently stops after one bad poll
-            # is worse than one that logs and retries.
-            logger.exception("NCM schedule poll failed; will retry next cycle.")
+            logger.warning('NCM scheduler poll failed; retrying next poll.')
         await asyncio.sleep(_POLL_INTERVAL_SECONDS)

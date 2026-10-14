@@ -117,6 +117,15 @@ class NcmJobDetailOut(NcmJobSummaryOut):
 
 
 class NcmScheduleOut(BaseModel):
+    next_due_at: datetime | None = None
+    execution_status: str = 'never'
+    last_attempted_at: datetime | None = None
+    last_success_at: datetime | None = None
+    last_job_id: str | None = None
+    total_devices: int = 0
+    succeeded: int = 0
+    failed: int = 0
+    execution_error: str | None = None
     id: str
     name: str
     description: str | None
@@ -140,7 +149,7 @@ class NcmScheduleRequest(BaseModel):
     device_ids: list[str] = Field(default_factory=list)
     device_group_ids: list[str] = Field(default_factory=list)
     configuration_types: list[str] = Field(default_factory=lambda: ["running"])
-    daily_run_time: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$", description="24-hour HH:MM, server-local time.")
+    daily_run_time: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$", description="24-hour HH:MM, UTC.")
     retention_days: int = Field(default=90, ge=1, le=3650)
 
 

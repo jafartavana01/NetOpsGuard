@@ -24,3 +24,9 @@ When the application and API change, deploy them together and refresh the browse
 Stop and diagnose rather than manually relaxing scope restrictions or ignoring schema errors. An application-only rollback may not work with a newer database schema. Restore a **matching** application version, database, configuration, and encryption material using the recovery procedure previously tested in your environment. A generated tac_plus-ng file or source ZIP by itself is not a complete platform backup.
 
 For first checks and service logs, see [Troubleshooting](TROUBLESHOOTING.md). For installation details, see [Installation](INSTALL.md).
+
+### NCM schedule execution state
+
+The scheduled-backup update adds a separate execution-state table at application startup; it preserves existing schedules, encrypted Device Credentials, and backup history. Stop old application workers before starting the upgraded version so old and new schedulers cannot run together. The database account needs permission to create the new table. A failed initialization prevents startup rather than running without execution tracking.
+
+Check each schedule's UTC time and status after upgrading. Historical attempts without detailed outcome records are not labelled successful. Review interrupted jobs before an explicit retry. Back up the database before upgrading; rolling back the application also restores the older scheduler's limitations and must not be mixed with new workers. The additive state table can remain in place when rolling back.

@@ -105,3 +105,22 @@ The backend suite uses real SQLite transactions and Fernet encryption with tempo
 The browser suite uses the actual templates on loopback port 8773 with synthetic API responses. It requires Playwright, `GUI_CHROMIUM`, and the existing Python test dependencies. It covers password retention/rotation, stale updates, error/denied states, in-flight controls, navigation cleanup, and compact layouts; it produces no evidence archives. The existing Security Center browser test now verifies that credentials cannot be edited on Scheduled Audits and that discarding schedule changes restores the server-confirmed time.
 
 GUI-07.2 verification: 34 backend tests and 26 browser checks passed. Existing GUI-01–07.1, atomic-policy, restoration, and dependency browser suites passed 904 checks. Existing project scripts and authorization/CSRF checks passed; F03 remains 189 PASS / 13 XFAIL, with those same 13 failures exposed by `--no-xfail`. PostgreSQL suites skipped 91 tests (34 credential tests and 57 existing tests) without a disposable DSN. Real SSH/Cisco testing was not performed.
+
+## Scheduled backup reliability
+
+Run the focused suite from the repository root with the application dependencies and Paramiko installed:
+
+```bash
+python tests/ncm_scheduler/test_integration.py
+python tests/ncm_scheduler/test_api.py
+python tests/ncm_scheduler/postgres_integration.py
+node tests/ncm_scheduler/browser.cjs
+```
+
+The integration suite uses an actual temporary SQLite database, encrypted credentials, the scheduler/backup/archive services, and a disposable loopback Paramiko SSH server serving Cisco-style command output. It verifies a schedule crossing its due time, running/startup archives linked to the correct job/device, duplicate prevention, simultaneous worker processes, process death after a durable claim, recovery, retention pins, incomplete output, and failed authentication. Mocked timeout/exception cases supplement these controlled SSH tests. They do not substitute for physical IOS/IOS-XE verification.
+
+The API tests exercise permission denial, CSRF rejection, persisted blocked outcomes, and response secrecy. The browser test uses the actual template and synthetic API responses on loopback port 8774; it checks status presentation, job links, confirmations, failed/denied requests, and responsive layouts. It requires Playwright and `GUI_CHROMIUM`.
+
+With a disposable `F03_POSTGRES_DSN`, the PostgreSQL suite repeats the database/SSH contracts in an isolated schema. Without it the suite explicitly skips. SQLite-specific child-process tests are not PostgreSQL verification; multi-process PostgreSQL worker termination, advisory-lock connection loss, and concurrent transactions remain native acceptance cases. Do not infer distributed exactly-once execution during a database network partition from ordinary advisory-lock tests.
+
+Controlled SQLite/SSH integration is the scheduled-backup acceptance evidence in this environment. PostgreSQL and physical Cisco acceptance remain pending. The older GUI-only results above did not establish scheduler correctness. Audit-comparison classification, directory TLS verification, and role-deletion privilege fallback remain separate unresolved issues.

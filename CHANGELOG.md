@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — Scheduled backup reliability
+
+- NCM schedules record durable attempts and outcomes, catch up the latest missed UTC occurrence, and prevent concurrent execution across workers. A failed schedule no longer interrupts evaluation of unrelated schedules.
+- Backup Schedules shows execution status, last attempt/success, device counts, and links to jobs and archives. Run Now uses saved targets and types with the existing schedule permission and CSRF protection.
+- Missing credentials and empty targets are visible blocked results. Incomplete SSH configuration output is rejected instead of being archived as a successful backup.
+- Schedule retention protects latest snapshots, baselines, and deployment recovery points. Existing credentials and scheduling settings are preserved.
+
+
 ## Unreleased — Centralized device credentials
 
 - System → Device Credentials manages the shared SSH service account independently of audit schedules. Existing encrypted passwords and execution history are preserved without re-entry.

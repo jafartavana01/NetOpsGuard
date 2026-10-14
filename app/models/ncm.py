@@ -115,7 +115,7 @@ class NcmBackupSchedule(Base):
     # Comma-separated: "running" or "running,startup".
     configuration_types: Mapped[str] = mapped_column(String(128), nullable=False, default="running")
 
-    # 24-hour "HH:MM" in the server's own local time. A single daily
+    # 24-hour "HH:MM" in UTC. A single daily
     # time, not a cron expression -- the same reasoning as the existing
     # scheduled-audit settings: a field an admin can read at a glance
     # is more honest about what this actually offers than cron syntax
@@ -360,3 +360,19 @@ class NcmDeployment(Base):
     started_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class NcmScheduleState(Base):
+    """Durable execution checkpoint. Existing schedule settings remain untouched."""
+    __tablename__ = 'ncm_schedule_states'
+    schedule_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('ncm_backup_schedules.id', ondelete='CASCADE'), primary_key=True)
+    last_slot: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default='never')
+    attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    succeeded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    job_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey('ncm_backup_jobs.id', ondelete='SET NULL'), nullable=True)
+    total: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    succeeded: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    failed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -33,7 +33,7 @@ from sqlalchemy.orm import Session
 from ..database import get_sessionmaker
 from ..models.device import NetworkDevice
 from ..models.ncm import NcmBackupJob, NcmBackupJobTarget
-from . import ncm_archive, ncm_drivers
+from . import ncm_archive, ncm_drivers, ncm_lock
 
 logger = logging.getLogger(__name__)
 
@@ -143,10 +143,11 @@ def _retrieve_one(work: _DeviceWork, configuration_type: str, username: str, pas
         }
 
 
-def run_backup(
+def _run_backup(
     db: Session, *, devices: list[NetworkDevice], configuration_types: list[str],
     ssh_username: str, ssh_password: str, source: str, started_by: str | None = None,
     schedule_id=None, schedule_name: str | None = None, concurrency: int = DEFAULT_CONCURRENCY,
+    job=None,
 ) -> BackupOutcome:
     """
     Backs up every device for every requested configuration type,
@@ -157,12 +158,13 @@ def run_backup(
     NCM table, and never placed in a target row, log line or error
     message.
     """
-    job = NcmBackupJob(
+    job = job or NcmBackupJob(
         display_number=_next_job_number(db), source=source, status="running",
         started_by=started_by, schedule_id=schedule_id, schedule_name=schedule_name,
         total_devices=len(devices),
     )
     db.add(job)
+    db.flush()
     db.commit()
     db.refresh(job)
 
@@ -230,3 +232,9 @@ def run_backup(
     db.commit()
 
     return outcome
+
+
+def run_backup(db: Session, **kwargs) -> BackupOutcome:
+    # Serializes MAX+1 job numbers and archive versions across backup workers.
+    with ncm_lock.hold(db, 'backup-writer'):
+        return _run_backup(db, **kwargs)

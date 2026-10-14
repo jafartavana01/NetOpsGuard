@@ -127,7 +127,17 @@ class NetworkDeviceDriver:
                 error="Connected, but the device returned no command output.",
             )
 
-        content = self.clean_output(result.command_results[-1].output or "", command)
+        raw = result.command_results[-1].output or ""
+        # The shared reader may return partial text on timeout/idle fallback.
+        # A configuration archive must not call that an intact backup. Supported
+        # IOS/IOS-XE devices finish with their prompt; retain prior archives when
+        # completion cannot be established.
+        if not raw.strip() or not _TRAILING_PROMPT_RE.match(raw.strip().splitlines()[-1]):
+            return ConfigRetrievalResult(
+                ok=False, connection_ok=True, retrieval_ok=False,
+                error="Configuration retrieval did not finish with a device prompt; it may have timed out or been interrupted.",
+            )
+        content = self.clean_output(raw, command)
         if not content.strip():
             return ConfigRetrievalResult(
                 ok=False, connection_ok=True, retrieval_ok=False,

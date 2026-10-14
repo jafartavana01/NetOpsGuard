@@ -10,8 +10,9 @@
   <div class="content-head" style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
     <div>
       <h1>Backup Schedules</h1><p>Backups use the shared SSH account in <a href="/platform/device-credentials">System → Device Credentials</a>.</p>
-      <p class="content-sub">Daily configuration backups run on the server. Times below use the server’s local clock, not your browser time zone. Next-run estimates and last-result summaries are not available.</p>
+      <p class="content-sub">Daily configuration backups run on the server. Times are UTC. The most recent missed occurrence is caught up after restart. Next due is a nominal time; busy workers may start later.</p>
     </div>
+    <button type="button" class="btn-secondary" id="refresh-schedules-btn">Refresh status</button>
     <button type="button" class="btn-primary btn-with-icon" id="add-schedule-btn" style="width:auto;">{{ icons.icon('plus', 16) }}New Schedule</button>
   </div>
 
@@ -40,7 +41,7 @@
 
       <div class="field-row">
         <label class="field">
-          <span class="field-label">Daily run time (server local time)</span>
+          <span class="field-label">Daily run time (UTC)</span>
           <div class="field-icon-wrap">
             <span class="field-icon">{{ icons.icon('history', 14) }}</span>
             <input type="time" id="schedule-time" required value="02:00">
@@ -105,7 +106,9 @@
   let schedules = [];
   let devices = [];
   let groups = [];
-  let targetsReady=false,dirty=false,saving=false;
+  let targetsReady=false,dirty=false,saving=false,alive=true,loading=false;
+  AAAPlatform.onViewLeave(()=>alive=false);
+  document.getElementById('refresh-schedules-btn').addEventListener('click',()=>load());
 
   function renderList() {
     const wrap = document.getElementById('schedules-wrap');
@@ -115,8 +118,8 @@
       return;
     }
     wrap.innerHTML =
-      '<table class="data-table"><thead><tr><th>Name</th><th>Status</th><th>Daily · server local</th><th>Types</th>' +
-      '<th>Targets</th><th>Retention</th><th>Last run</th><th></th></tr></thead><tbody>' +
+      '<table class="data-table"><thead><tr><th>Name</th><th>Status</th><th>Daily · UTC</th><th>Types</th>' +
+      '<th>Targets</th><th>Retention</th><th>Execution</th><th></th></tr></thead><tbody>' +
       schedules.map((s) =>
         '<tr><td>' + esc(s.name) + (s.description ? '<div class="content-sub">' + esc(s.description) + '</div>' : '') + '</td>' +
         '<td><span class="badge sec-sev-badge ' + (s.enabled ? 'is-signal' : '') + '">' +
@@ -125,8 +128,15 @@
         '<td class="content-sub">' + esc(s.configuration_types.join(', ')) + '</td>' +
         '<td class="content-sub">' + s.device_ids.map(id=>esc(devices.find(d=>d.device_id===id)?.device_name||'Unavailable device '+id)).join(', ') + '<div>' + s.device_group_ids.map(id=>esc(groups.find(g=>g.id===id)?.name||'Unavailable group '+id)).join(', ') + '</div></td>' +
         '<td class="cell-mono">' + s.retention_days + 'd</td>' +
-        '<td class="content-sub">' + (s.last_run_at ? new Date(s.last_run_at).toLocaleString() : 'never') + '</td>' +
+         '<td class="content-sub">' + esc(s.execution_status || 'never') +
+        '<div>Next due: ' + (s.next_due_at ? esc(new Date(s.next_due_at).toISOString()) : '—') + '</div>' +
+        '<div>Attempt: ' + (s.last_attempted_at ? esc(new Date(s.last_attempted_at).toLocaleString()) : 'never') + '</div>' +
+        '<div>Success: ' + (s.last_success_at ? esc(new Date(s.last_success_at).toLocaleString()) : 'never') + '</div>' +
+        '<div>' + (s.succeeded || 0) + ' succeeded / ' + (s.failed || 0) + ' failed / ' + (s.total_devices || 0) + ' total' + (s.total_devices>(s.succeeded||0)+(s.failed||0)?' · '+(s.total_devices-(s.succeeded||0)-(s.failed||0))+' not yet confirmed':'') + '</div>' +
+        (s.execution_error ? '<div role="status">' + esc(s.execution_error) + '</div>' : '') +
+        (s.last_job_id ? '<a href="/ncm/jobs?job='+encodeURIComponent(s.last_job_id)+'">Backup job and configurations</a>' : '') + '</td>' +
         '<td class="cell-actions">' +
+        (OpsUI.can('ncm:schedule') ? '<button type="button" class="btn-secondary btn-small" '+(!s.enabled||s.execution_status==='running'?'disabled':'')+' data-run="'+s.id+'">Run Now</button>' : '') +
         '<button type="button" class="btn-secondary btn-small" data-edit="' + s.id + '">Edit</button>' +
         '<button type="button" class="btn-danger btn-small" data-delete="' + s.id + '">Delete</button></td></tr>'
       ).join('') + '</tbody></table>';
@@ -246,6 +256,8 @@
   });
 
   async function load() {
+    if(!alive||loading)return;loading=true;
+    try{
     const wrap = document.getElementById('schedules-wrap');
     let res, devRes, grpRes;
     try {
@@ -253,6 +265,7 @@
       devRes = await AAAPlatform.authedFetch('/api/ncm/devices');
       grpRes = await AAAPlatform.authedFetch('/api/device-groups');
     } catch (e) { res = null; }
+    if(!alive)return;
     if (!res || !res.ok) {
       wrap.innerHTML = '<div class="empty-state">' + (res && res.status === 403
         ? "Your role doesn't have permission to view Configuration Management."
@@ -263,9 +276,25 @@
     schedules = await res.json();
     devices = devRes && devRes.ok ? await devRes.json() : [];
     groups = grpRes && grpRes.ok ? await grpRes.json() : [];
-    renderList();
+    if(alive)renderList();
+    }catch{if(alive)AAAPlatform.toast('Could not refresh schedule status.','error');}
+    finally{loading=false;}
   }
 
+  document.getElementById('schedules-wrap').addEventListener('click',async e=>{
+    const button=e.target.closest('button[data-run]');if(!button||button.disabled)return;
+    if(!window.confirm('Run this schedule now with its saved targets, backup types and Device Credentials?'))return;
+    button.disabled=true;
+    try{
+      const res=await AAAPlatform.authedFetch('/api/ncm/schedules/'+encodeURIComponent(button.dataset.run)+'/run-now',{method:'POST'});
+      const data=await res.json();
+      if(!res.ok)throw Error(typeof data.detail==='string'?data.detail:'Schedule could not run.');
+      const state=data.execution_status;
+      if(!['completed','partial_success','failed','blocked'].includes(state))throw Error('Execution outcome is not confirmed. Refresh schedules and review the backup job.');
+      if(alive){AAAPlatform.toast('Schedule result: '+state,state==='completed'?'success':'error');await load();}
+    }catch(error){if(alive)AAAPlatform.toast((error.message||'Request failed.')+' Refresh schedules and review the job before retrying; execution may have continued.','error');}
+    finally{if(button.isConnected)button.disabled=false;}
+  });
   OpsUI.table('schedules-wrap');
   OpsUI.pickerFilter('schedule-devices','Search devices by name, IP or group…');
   OpsUI.pickerFilter('schedule-groups','Search device groups…');

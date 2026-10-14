@@ -184,7 +184,30 @@ def create_app() -> FastAPI:
         # schedule different things on their own settings, and a
         # failure or slow run in one must not delay the other.
         from .services.ncm_scheduler import scheduler_loop as ncm_scheduler_loop
-        asyncio.create_task(ncm_scheduler_loop())
+        # Additive table only; safe for upgrades without altering old schedules.
+        from .models.ncm import NcmScheduleState
+        from .database import get_engine
+        from .services import ncm_lock
+        with get_sessionmaker()() as db:
+            # Serialize table initialization across Uvicorn workers.
+            while True:
+                try:
+                    with ncm_lock.hold(db, 'scheduler-schema'):
+                        NcmScheduleState.__table__.create(get_engine(), checkfirst=True)
+                    break
+                except ncm_lock.Busy:
+                    await asyncio.sleep(0.1)
+        app.state.ncm_scheduler_task = asyncio.create_task(ncm_scheduler_loop())
+
+    @app.on_event("shutdown")
+    async def _stop_ncm_scheduler_loop():
+        task = getattr(app.state, 'ncm_scheduler_task', None)
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
     return app
 

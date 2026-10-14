@@ -41,7 +41,7 @@ from .. import security
 from ..services import device_credentials
 from ..models.device import NetworkDevice
 from ..models.ncm import NcmCandidate, NcmConfiguration, NcmDeployment
-from . import ncm_archive, ncm_drivers, ssh_provision
+from . import ncm_archive, ncm_drivers, ssh_provision, ncm_lock
 
 logger = logging.getLogger(__name__)
 
@@ -149,22 +149,29 @@ def _next_number(db: Session, model) -> int:
 
 
 def _backup_now(db: Session, device: NetworkDevice, username: str, password: str,
-                source: str, actor: str | None) -> NcmConfiguration | None:
+                source: str, actor: str | None, *, deployment=None, pin=None) -> NcmConfiguration | None:
     """Takes a real backup and archives it, returning the snapshot (or
     the existing one if unchanged). None means retrieval failed."""
-    driver = ncm_drivers.get_driver(getattr(device, "vendor", None))
-    result = driver.get_configuration(
-        device.ip_address.split("/")[0].strip(), username, password, "running",
-    )
-    if not result.ok:
-        return None
-    archived = ncm_archive.archive_configuration(
-        db, device_id=device.id, device_name=device.name,
-        configuration_type="running", content=result.content,
-        source=source, created_by=actor,
-    )
-    db.commit()
-    return archived.configuration
+    try:
+        with ncm_lock.hold(db, 'backup-writer'):
+            driver = ncm_drivers.get_driver(getattr(device, "vendor", None))
+            result = driver.get_configuration(
+                device.ip_address.split("/")[0].strip(), username, password, "running",
+            )
+            if not result.ok:
+                return None
+            archived = ncm_archive.archive_configuration(
+                db, device_id=device.id, device_name=device.name,
+                configuration_type="running", content=result.content,
+                source=source, created_by=actor,
+            )
+            if deployment is not None and archived.configuration is not None:
+                setattr(deployment, pin, archived.configuration.id)
+            db.commit()
+            return archived.configuration
+    except ncm_lock.Busy:
+        return None  # Existing caller aborts deployment without a rollback point.
+
 
 
 def deploy_candidate(db: Session, candidate: NcmCandidate, *, actor: str | None) -> DeployOutcome:
@@ -213,7 +220,7 @@ def deploy_candidate(db: Session, candidate: NcmCandidate, *, actor: str | None)
 
     # STEP 1 -- rollback point. Abort if this fails: changing a device
     # you cannot roll back is the one outcome worth refusing outright.
-    pre = _backup_now(db, device, username, password, "pre-deployment", actor)
+    pre = _backup_now(db, device, username, password, "pre-deployment", actor, deployment=deployment, pin="pre_configuration_id")
     if pre is None:
         deployment.status = "failed"
         deployment.error_message = (
@@ -248,7 +255,7 @@ def deploy_candidate(db: Session, candidate: NcmCandidate, *, actor: str | None)
 
     # STEP 3 -- verify from a real backup, never from the commands
     # having been accepted.
-    post = _backup_now(db, device, username, password, "post-deployment", actor)
+    post = _backup_now(db, device, username, password, "post-deployment", actor, deployment=deployment, pin="post_configuration_id")
     if post is not None:
         deployment.post_configuration_id = post.id
         deployment.verified_changed = bool(pre and post.sha256 != pre.sha256)

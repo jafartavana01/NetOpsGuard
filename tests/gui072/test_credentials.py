@@ -110,11 +110,28 @@ class CredentialsTests(unittest.TestCase):
     def test_scheduled_consumers(self):
         from app.services import scheduled_audit,ncm_scheduler
         self.seed()
-        for module,method in [(scheduled_audit,'run_scheduled_audit'),(ncm_scheduler,'run_due_schedule')]:
+        for module,method in [(scheduled_audit,'run_scheduled_audit')]:
             db=MagicMock();db.query.return_value.filter.return_value.all.return_value=[NS(daily_run_time='00:00',last_run_at=None)]
             with patch.object(module,'get_sessionmaker',return_value=lambda:db),patch.object(credentials,'get_settings',return_value=credentials.get_settings(self.db)),patch.object(module,'should_run_now',return_value=True),patch.object(module,method,return_value=NS(status='completed',summary='Done')) as run:
                 module._poll_once();self.assertEqual(run.call_args.kwargs['ssh_username'],'legacy')
                 kw=run.call_args.kwargs;self.assertEqual(kw.get('ssh_password') or security.decrypt_secret(kw['ssh_password_encrypted']),'old-secret')
+
+        # The durable NCM scheduler now owns job creation. Exercise that real
+        # boundary, mocking only the retrieval engine to inspect credentials.
+        from app.database import Base
+        from app.models.device import NetworkDevice
+        from app.models.ncm import NcmBackupSchedule
+        from app.services.ncm_backup import BackupOutcome
+        from datetime import datetime,timezone,timedelta
+        Base.metadata.create_all(self.engine,tables=[t for t in Base.metadata.sorted_tables if t.name.startswith('ncm_') or t.name in ('network_devices','device_groups')])
+        device=NetworkDevice(name='R1',ip_address='192.0.2.1',enabled=True)
+        self.db.add(device);self.db.flush()
+        now=datetime.now(timezone.utc)
+        schedule=NcmBackupSchedule(name='credentials',device_ids=str(device.id),device_group_ids='',daily_run_time='00:00',configuration_types='running',created_at=now-timedelta(days=1))
+        self.db.add(schedule);self.db.commit()
+        with patch.object(ncm_scheduler.ncm_backup,'_run_backup',return_value=BackupOutcome(total=1,succeeded=1)) as run:
+            ncm_scheduler.run_schedule(self.db,schedule.id,now=now,manual=True)
+            self.assertEqual((run.call_args.kwargs['ssh_username'],run.call_args.kwargs['ssh_password']),('legacy','old-secret'))
 
     def test_two_sessions_cannot_overwrite_rotation(self):
         self.save();other=Session(self.engine)

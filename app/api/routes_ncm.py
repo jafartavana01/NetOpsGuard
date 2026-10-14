@@ -24,7 +24,8 @@ from sqlalchemy.orm import Session
 from .. import security
 from ..database import get_db
 from ..models.admin import AdminUser
-from ..services import device_credentials
+from ..services import device_credentials, ncm_scheduler, ncm_lock
+from ..models.ncm import NcmScheduleState
 from ..models.device import NetworkDevice
 from ..models.device_group import DeviceGroup
 from ..models.ncm import (
@@ -83,13 +84,22 @@ def _split(raw: str) -> list[str]:
     return [x.strip() for x in (raw or "").split(",") if x.strip()]
 
 
-def _schedule_out(s: NcmBackupSchedule) -> NcmScheduleOut:
+def _schedule_out(s: NcmBackupSchedule, db: Session | None = None) -> NcmScheduleOut:
+    state = db.get(NcmScheduleState, s.id) if db is not None else None
     return NcmScheduleOut(
         id=str(s.id), name=s.name, description=s.description, enabled=s.enabled,
         device_ids=_split(s.device_ids), device_group_ids=_split(s.device_group_ids),
         configuration_types=_split(s.configuration_types), daily_run_time=s.daily_run_time,
         retention_days=s.retention_days, created_by=s.created_by, updated_by=s.updated_by,
         last_run_at=s.last_run_at, created_at=s.created_at, updated_at=s.updated_at,
+        next_due_at=ncm_scheduler.next_due(s, state),
+        execution_status=state.status if state else 'never',
+        last_attempted_at=ncm_scheduler.utc(state.attempted_at) if state and state.attempted_at else (ncm_scheduler.utc(s.last_run_at) if s.last_run_at else None),
+        last_success_at=ncm_scheduler.utc(state.succeeded_at) if state and state.succeeded_at else None,
+        last_job_id=str(state.job_id) if state and state.job_id else None,
+        total_devices=state.total if state else 0,
+        succeeded=state.succeeded if state else 0, failed=state.failed if state else 0,
+        execution_error=state.error if state else None,
     )
 
 
@@ -349,12 +359,15 @@ def run_backup(
     if not devices:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="No enabled devices matched that selection.")
 
-    outcome = ncm_backup.run_backup(
-        db, devices=devices, configuration_types=types,
-        ssh_username=settings.ssh_username,
-        ssh_password=security.decrypt_secret(settings.ssh_password_encrypted),
-        source="manual", started_by=admin.username,
-    )
+    try:
+        outcome = ncm_backup.run_backup(
+            db, devices=devices, configuration_types=types,
+            ssh_username=settings.ssh_username,
+            ssh_password=security.decrypt_secret(settings.ssh_password_encrypted),
+            source="manual", started_by=admin.username,
+        )
+    except ncm_lock.Busy as exc:
+        raise HTTPException(409, str(exc)) from None
     return NcmBackupResultOut(
         job_display_number=outcome.job_display_number, total_devices=outcome.total,
         succeeded=outcome.succeeded, failed=outcome.failed, changed=outcome.changed,
@@ -449,7 +462,7 @@ def list_schedules(
     _admin: AdminUser = Depends(require_permission("ncm:view")),
 ):
     rows = db.query(NcmBackupSchedule).order_by(NcmBackupSchedule.name.asc()).all()
-    return [_schedule_out(s) for s in rows]
+    return [_schedule_out(s, db) for s in rows]
 
 
 @router.post("/schedules", response_model=NcmScheduleOut, dependencies=[Depends(verify_csrf)])
@@ -478,7 +491,7 @@ def create_schedule(
     db.add(s)
     db.commit()
     db.refresh(s)
-    return _schedule_out(s)
+    return _schedule_out(s, db)
 
 
 @router.put("/schedules/{schedule_id}", response_model=NcmScheduleOut, dependencies=[Depends(verify_csrf)])
@@ -488,35 +501,40 @@ def update_schedule(
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(require_permission("ncm:schedule")),
 ):
-    s = db.query(NcmBackupSchedule).filter(
-        NcmBackupSchedule.id == _parse_uuids([schedule_id], "schedule ids")[0]
-    ).first()
-    if not s:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Schedule not found.")
-    if not payload.device_ids and not payload.device_group_ids:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Select at least one device or device group.")
+    try:
+        with ncm_lock.hold(db, 'schedule:' + str(_parse_uuids([schedule_id], "schedule ids")[0])):
+            s = db.query(NcmBackupSchedule).filter(
+                NcmBackupSchedule.id == _parse_uuids([schedule_id], "schedule ids")[0]
+            ).first()
+            if not s:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Schedule not found.")
+            if not payload.device_ids and not payload.device_group_ids:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Select at least one device or device group.")
 
-    clash = db.query(NcmBackupSchedule).filter(
-        NcmBackupSchedule.name == payload.name, NcmBackupSchedule.id != s.id
-    ).first()
-    if clash:
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="A schedule with that name already exists.")
+            clash = db.query(NcmBackupSchedule).filter(
+                NcmBackupSchedule.name == payload.name, NcmBackupSchedule.id != s.id
+            ).first()
+            if clash:
+                raise HTTPException(status.HTTP_409_CONFLICT, detail="A schedule with that name already exists.")
 
-    _parse_uuids(payload.device_ids, "device ids")
-    _parse_uuids(payload.device_group_ids, "device group ids")
+            _parse_uuids(payload.device_ids, "device ids")
+            _parse_uuids(payload.device_group_ids, "device group ids")
 
-    s.name = payload.name
-    s.description = payload.description
-    s.enabled = payload.enabled
-    s.device_ids = ",".join(payload.device_ids)
-    s.device_group_ids = ",".join(payload.device_group_ids)
-    s.configuration_types = ",".join(payload.configuration_types or ["running"])
-    s.daily_run_time = payload.daily_run_time
-    s.retention_days = payload.retention_days
-    s.updated_by = admin.username
-    db.commit()
-    db.refresh(s)
-    return _schedule_out(s)
+            s.name = payload.name
+            s.description = payload.description
+            s.enabled = payload.enabled
+            s.device_ids = ",".join(payload.device_ids)
+            s.device_group_ids = ",".join(payload.device_group_ids)
+            s.configuration_types = ",".join(payload.configuration_types or ["running"])
+            s.daily_run_time = payload.daily_run_time
+            s.retention_days = payload.retention_days
+            s.updated_by = admin.username
+            db.commit()
+            db.refresh(s)
+            return _schedule_out(s, db)
+    except ncm_lock.Busy as exc:
+        raise HTTPException(409, str(exc)) from None
+
 
 
 @router.delete("/schedules/{schedule_id}", status_code=status.HTTP_204_NO_CONTENT,
@@ -526,14 +544,19 @@ def delete_schedule(
     db: Session = Depends(get_db),
     _admin: AdminUser = Depends(require_permission("ncm:schedule")),
 ):
-    s = db.query(NcmBackupSchedule).filter(
-        NcmBackupSchedule.id == _parse_uuids([schedule_id], "schedule ids")[0]
-    ).first()
-    if not s:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Schedule not found.")
-    db.delete(s)
-    db.commit()
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    try:
+        with ncm_lock.hold(db, 'schedule:' + str(_parse_uuids([schedule_id], "schedule ids")[0])):
+            s = db.query(NcmBackupSchedule).filter(
+                NcmBackupSchedule.id == _parse_uuids([schedule_id], "schedule ids")[0]
+            ).first()
+            if not s:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Schedule not found.")
+            db.delete(s)
+            db.commit()
+            return Response(status_code=status.HTTP_204_NO_CONTENT)
+    except ncm_lock.Busy as exc:
+        raise HTTPException(409, str(exc)) from None
+
 
 
 @router.post("/compare", response_model=CompareResultOut, dependencies=[Depends(verify_csrf)])
@@ -698,50 +721,54 @@ def set_baseline(
     drift comparison meaningless, so it is rejected rather than
     trusted.
     """
-    device_uuid = _parse_uuids([device_id], "device ids")[0]
-    config_uuid = _parse_uuids([payload.configuration_id], "configuration ids")[0]
+    try:
+        with ncm_lock.hold(db, 'backup-writer'):
+            device_uuid = _parse_uuids([device_id], "device ids")[0]
+            config_uuid = _parse_uuids([payload.configuration_id], "configuration ids")[0]
 
-    device = db.query(NetworkDevice).filter(NetworkDevice.id == device_uuid).first()
-    if not device:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Device not found.")
+            device = db.query(NetworkDevice).filter(NetworkDevice.id == device_uuid).first()
+            if not device:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Device not found.")
 
-    config = db.query(NcmConfiguration).filter(NcmConfiguration.id == config_uuid).first()
-    if not config:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Configuration not found.")
-    if config.device_id != device_uuid:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            detail="That configuration belongs to a different device.",
-        )
+            config = db.query(NcmConfiguration).filter(NcmConfiguration.id == config_uuid).first()
+            if not config:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Configuration not found.")
+            if config.device_id != device_uuid:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    detail="That configuration belongs to a different device.",
+                )
 
-    baseline = (
-        db.query(NcmBaseline)
-        .filter(
-            NcmBaseline.device_id == device_uuid,
-            NcmBaseline.configuration_type == config.configuration_type,
-        )
-        .first()
-    )
-    if baseline is None:
-        baseline = NcmBaseline(device_id=device_uuid, configuration_type=config.configuration_type)
-        db.add(baseline)
+            baseline = (
+                db.query(NcmBaseline)
+                .filter(
+                    NcmBaseline.device_id == device_uuid,
+                    NcmBaseline.configuration_type == config.configuration_type,
+                )
+                .first()
+            )
+            if baseline is None:
+                baseline = NcmBaseline(device_id=device_uuid, configuration_type=config.configuration_type)
+                db.add(baseline)
 
-    baseline.device_name = device.name
-    baseline.configuration_id = config.id
-    baseline.version_number = config.version_number
-    baseline.sha256 = config.sha256
-    baseline.notes = payload.notes
-    baseline.set_by = admin.username
-    db.commit()
-    db.refresh(baseline)
+            baseline.device_name = device.name
+            baseline.configuration_id = config.id
+            baseline.version_number = config.version_number
+            baseline.sha256 = config.sha256
+            baseline.notes = payload.notes
+            baseline.set_by = admin.username
+            db.commit()
+            db.refresh(baseline)
 
-    return BaselineOut(
-        id=str(baseline.id), device_id=str(baseline.device_id), device_name=baseline.device_name,
-        configuration_type=baseline.configuration_type,
-        configuration_id=str(baseline.configuration_id) if baseline.configuration_id else None,
-        version_number=baseline.version_number, sha256=baseline.sha256,
-        notes=baseline.notes, set_by=baseline.set_by, set_at=baseline.set_at,
-    )
+            return BaselineOut(
+                id=str(baseline.id), device_id=str(baseline.device_id), device_name=baseline.device_name,
+                configuration_type=baseline.configuration_type,
+                configuration_id=str(baseline.configuration_id) if baseline.configuration_id else None,
+                version_number=baseline.version_number, sha256=baseline.sha256,
+                notes=baseline.notes, set_by=baseline.set_by, set_at=baseline.set_at,
+            )
+    except ncm_lock.Busy as exc:
+        raise HTTPException(409, str(exc)) from None
 
 
 @router.delete("/devices/{device_id}/baseline", status_code=status.HTTP_204_NO_CONTENT,
@@ -1021,3 +1048,13 @@ def detailed_diff(
 def credential_status(db: Session = Depends(get_db), _admin: AdminUser = Depends(require_permission("ncm:view"))):
     """Status only: NCM viewers cannot retrieve the username or credential token."""
     return {'configured': device_credentials.configured(device_credentials.get_settings(db))}
+
+
+@router.post("/schedules/{schedule_id}/run-now", response_model=NcmScheduleOut, dependencies=[Depends(verify_csrf)])
+def run_schedule_now(schedule_id: str, db: Session = Depends(get_db), admin: AdminUser = Depends(require_permission("ncm:schedule"))):
+    identifier = _parse_uuids([schedule_id], "schedule ids")[0]
+    try:
+        ncm_scheduler.run_schedule(db, identifier, manual=True, actor=admin.username)
+    except ncm_lock.Busy as exc:
+        raise HTTPException(409, str(exc)) from None
+    return _schedule_out(db.get(NcmBackupSchedule, identifier), db)
