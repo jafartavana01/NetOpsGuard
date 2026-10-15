@@ -38,6 +38,9 @@ PUBLIC = {("routes_auth.py", "POST", "/login"), ("routes_auth.py", "POST", "/log
 #: because it exposes nothing role-specific -- a fact to re-check when
 #: adding to this set, not a place to silence a failure.
 ANY_ADMIN_READS = {
+    # Read-only application metadata/defaults contain no secrets; schedule editors need them.
+    ("routes_system.py", "GET", "/timezone"),
+    ("routes_system.py", "GET", "/version"),
     ("routes_auth.py", "GET", "/me"),              # who am I
     ("routes_system.py", "GET", "/status"),        # service up/down
     ("routes_radius.py", "GET", "/attributes"),    # static dictionary

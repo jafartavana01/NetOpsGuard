@@ -105,7 +105,7 @@
         const s=d.services[unit]||{};return '<div class="panel"><div class="panel-head"><span class="rail rail-'+color(s.active_state)+'"></span>'+name+'</div><div class="panel-body">'+readout('State',s.active_state||'Unknown')+readout('Substate',s.sub_state)+readout('Enabled',s.enabled)+ (s.error?readout('Check',s.error):'')+'</div></div>';
       });
       panels.push('<div class="panel"><div class="panel-head"><span class="rail rail-'+color(d.database)+'"></span>Database</div><div class="panel-body">'+readout('Connectivity',d.database)+'</div></div>');
-      panels.push('<div class="panel"><div class="panel-head">System information</div><div class="panel-body">'+readout('Operating system',d.os)+readout('Build metadata',b.status)+readout('Daemon build profile',b.build_profile)+readout('Build date',b.build_date_utc)+readout('Enabled build features',(b.features_detected_enabled||[]).join(', ')||'Not recorded')+'</div></div>');
+      panels.push('<div class="panel"><div class="panel-head">System information</div><div class="panel-body">'+readout('NetOpsGuard version',d.application_version?.version||'Unavailable')+readout('Installed commit',d.application_version?.commit||'Not recorded')+readout('Operating system',d.os)+readout('Build metadata',b.status)+readout('Daemon build profile',b.build_profile)+readout('Build date',b.build_date_utc)+readout('Enabled build features',(b.features_detected_enabled||[]).join(', ')||'Not recorded')+'</div></div>');
       $('status-grid').innerHTML=panels.join('');$('status-checked').textContent=d.checked_at?'Checked '+new Date(d.checked_at).toLocaleString():'Check time not recorded';
     }catch(e){$('status-checked').textContent='Unknown — check unavailable';ui.error('status-grid',e.message);}
   }

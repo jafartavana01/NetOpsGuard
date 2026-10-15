@@ -17,7 +17,7 @@
     </div>
   </div>
 
-  <p class="security-note">One daily fleet schedule · Targets: all enabled devices · Time zone: UTC. No per-group schedules or next-run estimate are available.</p>
+  <p class="security-note">One daily fleet schedule · Targets: all enabled devices · Saved timezone controls execution. No per-group schedules.</p>
   <form id="schedule-form">
     <label class="toggle-field field" style="margin-bottom:16px;">
       <span class="toggle-switch">
@@ -30,9 +30,10 @@
     <p id="schedule-credential-status" role="status">Loading credential status…</p>
     <p><a href="/platform/device-credentials">System → Device Credentials</a> manages the shared SSH account.</p>
 
+<label class="field"><span class="field-label">Schedule timezone</span><select id="schedule-timezone"><option value="">Legacy UTC — preserve existing execution</option></select><span class="field-hint">Selecting a timezone explicitly converts the daily time shown below to that timezone. Existing schedules remain UTC until you save a different choice. Repeated DST times run once (first occurrence); nonexistent times are skipped.</span></label><p id="schedule-next" role="status"></p>
     <div class="field-row">
       <label class="field">
-        <span class="field-label">Daily run time (UTC)</span>
+        <span class="field-label">Daily run time in selected timezone</span>
         <div class="field-icon-wrap">
           <span class="field-icon">{{ icons.icon('history', 14) }}</span>
           <input type="time" id="schedule-run-time" required>
@@ -73,16 +74,17 @@
 (() => {
   SecurityUI.mount();const document=SecurityUI.scopeDocument();const $=id=>document.getElementById(id);
   let saved=null,busy=false,dirty=false;
-  function state(){ document.querySelectorAll('#schedule-form input').forEach(input=>input.disabled=busy||!saved); $('schedule-save').disabled=busy||!saved;$('schedule-run-now-btn').disabled=busy||!saved||!saved.has_password;$('schedule-cancel').disabled=busy||!saved;}
+  function state(){ document.querySelectorAll('#schedule-form input,#schedule-form select').forEach(input=>input.disabled=busy||!saved); $('schedule-save').disabled=busy||!saved;$('schedule-run-now-btn').disabled=busy||!saved||!saved.has_password;$('schedule-cancel').disabled=busy||!saved;}
   function error(message){$('schedule-form-error').textContent=message;$('schedule-form-error').hidden=false;}
-  function apply(s){saved=s;dirty=false;$('schedule-enabled').checked=s.enabled;$('schedule-run-time').value=s.daily_run_time;$('schedule-ip-note').value=s.management_ip_note||'';$('schedule-credential-status').textContent=s.has_password&&s.ssh_username?'SSH credentials configured':'SSH credentials required — configure Device Credentials.';$('schedule-last-run-body').innerHTML=s.last_run_at?'<p>'+SecurityUI.badge(s.last_run_status)+' · '+SecurityUI.dt(s.last_run_at)+'</p><pre class="security-evidence">'+AAAPlatform.escapeHtml(s.last_run_summary||'No summary recorded.')+'</pre>':'No scheduled or manual fleet run recorded.';state();}
+  function apply(s){ScheduleTime.choices($('schedule-timezone'),s.schedule_timezone||null);$('schedule-next').textContent='Next due: '+ScheduleTime.format(s.next_due_at,s.schedule_timezone);saved=s;dirty=false;$('schedule-enabled').checked=s.enabled;$('schedule-run-time').value=s.daily_run_time;$('schedule-ip-note').value=s.management_ip_note||'';$('schedule-credential-status').textContent=s.has_password&&s.ssh_username?'SSH credentials configured':'SSH credentials required — configure Device Credentials.';$('schedule-last-run-body').innerHTML=s.last_run_at?'<p>'+SecurityUI.badge(s.last_run_status)+' · '+AAAPlatform.escapeHtml(ScheduleTime.format(s.last_run_at,s.schedule_timezone))+'</p><pre class="security-evidence">'+AAAPlatform.escapeHtml(s.last_run_summary||'No summary recorded.')+'</pre>':'No scheduled or manual fleet run recorded.';state();}
   $('schedule-form').addEventListener('input',()=>dirty=true);$('schedule-form').addEventListener('change',()=>dirty=true);
   $('schedule-cancel').onclick=()=>{if(saved&&(!dirty||window.confirm('Discard unsaved schedule changes?'))){apply(saved);$('schedule-form-error').hidden=true;}};
   $('schedule-form').onsubmit=async e=>{e.preventDefault();if(busy||!saved)return;$('schedule-form-error').hidden=true;
+    if($('schedule-timezone').dataset.zoneLoading==='true'){error('Wait for timezone preferences to finish loading.');return;}
     const time=$('schedule-run-time').value;
     if(!time){error('Choose a daily run time.');return;}
     if($('schedule-enabled').checked&&(!saved.has_password||!saved.ssh_username)){error('Configure System → Device Credentials before enabling unattended audits.');return;}
-    const payload={enabled:$('schedule-enabled').checked,daily_run_time:time,management_ip_note:$('schedule-ip-note').value||null};
+    const payload={enabled:$('schedule-enabled').checked,daily_run_time:time,schedule_timezone:$('schedule-timezone').value||null,management_ip_note:$('schedule-ip-note').value||null};
     busy=true;state();try{const res=await SecurityUI.safeFetch('/api/security/schedule',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const data=await res.json();if(!res.ok){error(typeof data.detail==='string'?data.detail:'Could not save settings.');return;}apply(data);AAAPlatform.toast('Schedule saved.');}catch{error('Invalid response. Refresh settings before retrying.');}finally{busy=false;state();}
   };
   $('schedule-run-now-btn').onclick=async()=>{if(busy||!saved)return;if(dirty){error('Save or discard your edits before running the saved schedule.');return;}if(!window.confirm('Audit all enabled devices with the saved service account?'))return;

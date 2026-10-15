@@ -15,6 +15,9 @@ into list responses -- a fleet-wide archive list must not ship
 hundreds of full device configurations to the browser.
 """
 from __future__ import annotations
+from typing import Annotated
+from pydantic import AfterValidator
+from ..services.schedule_time import validate_zone
 
 from datetime import datetime
 
@@ -117,6 +120,7 @@ class NcmJobDetailOut(NcmJobSummaryOut):
 
 
 class NcmScheduleOut(BaseModel):
+    schedule_timezone: str | None = None
     next_due_at: datetime | None = None
     execution_status: str = 'never'
     last_attempted_at: datetime | None = None
@@ -143,13 +147,14 @@ class NcmScheduleOut(BaseModel):
 
 
 class NcmScheduleRequest(BaseModel):
+    schedule_timezone: Annotated[str | None, AfterValidator(validate_zone)] = None
     name: str = Field(min_length=1, max_length=128)
     description: str | None = Field(default=None, max_length=2000)
     enabled: bool = True
     device_ids: list[str] = Field(default_factory=list)
     device_group_ids: list[str] = Field(default_factory=list)
     configuration_types: list[str] = Field(default_factory=lambda: ["running"])
-    daily_run_time: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$", description="24-hour HH:MM, UTC.")
+    daily_run_time: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$", description="24-hour HH:MM; NULL timezone preserves legacy UTC.")
     retention_days: int = Field(default=90, ge=1, le=3650)
 
 

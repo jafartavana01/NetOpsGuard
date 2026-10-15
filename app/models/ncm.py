@@ -115,12 +115,14 @@ class NcmBackupSchedule(Base):
     # Comma-separated: "running" or "running,startup".
     configuration_types: Mapped[str] = mapped_column(String(128), nullable=False, default="running")
 
-    # 24-hour "HH:MM" in UTC. A single daily
+    # 24-hour "HH:MM" in the explicit schedule zone (legacy NULL is UTC). A single daily
     # time, not a cron expression -- the same reasoning as the existing
     # scheduled-audit settings: a field an admin can read at a glance
     # is more honest about what this actually offers than cron syntax
     # inviting sub-daily schedules the executor was never built to
     # guarantee against a large fleet.
+    # NULL preserves legacy UTC execution; explicit IANA zone is opt-in.
+    schedule_timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
     daily_run_time: Mapped[str] = mapped_column(String(5), nullable=False, default="02:00")
 
     retention_days: Mapped[int] = mapped_column(Integer, nullable=False, default=90)

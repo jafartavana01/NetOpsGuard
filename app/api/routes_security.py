@@ -14,6 +14,8 @@ auditing are deliberately not combined into one call yet.
 """
 from __future__ import annotations
 
+from ..services import scheduled_audit, ncm_lock
+
 import uuid
 from datetime import datetime, timezone
 
@@ -495,7 +497,8 @@ def get_schedule_settings(
     s = _get_or_create_schedule_settings(db)
     return AuditScheduleOut(
         enabled=s.enabled, ssh_username=s.ssh_username, has_password=bool(s.ssh_password_encrypted),
-        daily_run_time=s.daily_run_time, management_ip_note=s.management_ip_note,
+        daily_run_time=s.daily_run_time, schedule_timezone=s.schedule_timezone,
+        next_due_at=scheduled_audit.next_due(s), management_ip_note=s.management_ip_note,
         last_run_at=s.last_run_at, last_run_status=s.last_run_status, last_run_summary=s.last_run_summary,
     )
 
@@ -506,19 +509,26 @@ def update_schedule_settings(
     db: Session = Depends(get_db),
     _admin: AdminUser = Depends(get_current_superadmin),
 ):
-    s = _get_or_create_schedule_settings(db)
-    if payload.enabled and not device_credentials.configured(s):
-        raise HTTPException(400, device_credentials.REQUIRED)
-    s.enabled = payload.enabled
-    s.daily_run_time = payload.daily_run_time
-    s.management_ip_note = payload.management_ip_note
-    db.commit()
-    db.refresh(s)
-    return AuditScheduleOut(
-        enabled=s.enabled, ssh_username=s.ssh_username, has_password=bool(s.ssh_password_encrypted),
-        daily_run_time=s.daily_run_time, management_ip_note=s.management_ip_note,
-        last_run_at=s.last_run_at, last_run_status=s.last_run_status, last_run_summary=s.last_run_summary,
-    )
+    try:
+        with ncm_lock.hold(db, 'security-audit-schedule'):
+            s = _get_or_create_schedule_settings(db)
+            if payload.enabled and not device_credentials.configured(s):
+                raise HTTPException(400, device_credentials.REQUIRED)
+            s.enabled = payload.enabled
+            if "schedule_timezone" in payload.model_fields_set:
+                s.schedule_timezone = payload.schedule_timezone
+            s.daily_run_time = payload.daily_run_time
+            s.management_ip_note = payload.management_ip_note
+            db.commit()
+            db.refresh(s)
+            return AuditScheduleOut(
+                enabled=s.enabled, ssh_username=s.ssh_username, has_password=bool(s.ssh_password_encrypted),
+                daily_run_time=s.daily_run_time, schedule_timezone=s.schedule_timezone,
+                next_due_at=scheduled_audit.next_due(s), management_ip_note=s.management_ip_note,
+                last_run_at=s.last_run_at, last_run_status=s.last_run_status, last_run_summary=s.last_run_summary,
+            )
+    except ncm_lock.Busy:
+        raise HTTPException(409, 'A scheduled audit is running. Retry after it finishes.') from None
 
 
 @router.post("/schedule/run-now", response_model=AuditScheduleOut, dependencies=[Depends(verify_csrf)])
@@ -533,23 +543,34 @@ def run_schedule_now(
     credential actually works against the real fleet without waiting
     for the next scheduled time.
     """
-    s = _get_or_create_schedule_settings(db)
-    if not s.ssh_username or not s.ssh_password_encrypted:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=device_credentials.REQUIRED)
+    try:
+        with ncm_lock.hold(db, 'security-audit-schedule'):
+            s = _get_or_create_schedule_settings(db)
+            if not s.ssh_username or not s.ssh_password_encrypted:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=device_credentials.REQUIRED)
 
-    result = run_scheduled_audit(
-        db, ssh_username=s.ssh_username, ssh_password_encrypted=s.ssh_password_encrypted, batch_source="manual",
-    )
-    s.last_run_at = datetime.now(timezone.utc)
-    s.last_run_status = result.status
-    s.last_run_summary = result.summary
-    db.commit()
-    db.refresh(s)
-    return AuditScheduleOut(
-        enabled=s.enabled, ssh_username=s.ssh_username, has_password=bool(s.ssh_password_encrypted),
-        daily_run_time=s.daily_run_time, management_ip_note=s.management_ip_note,
-        last_run_at=s.last_run_at, last_run_status=s.last_run_status, last_run_summary=s.last_run_summary,
-    )
+            s.last_slot = (scheduled_audit.due_slot(s.daily_run_time, datetime.now(timezone.utc), s.schedule_timezone)
+                           if s.schedule_timezone else datetime.now(timezone.utc))
+            s.last_run_at = datetime.now(timezone.utc)
+            s.last_run_status = 'running'
+            s.last_run_summary = 'Manual audit started.'
+            db.commit()
+            result = run_scheduled_audit(
+                db, ssh_username=s.ssh_username, ssh_password_encrypted=s.ssh_password_encrypted, batch_source="manual",
+            )
+            s.last_run_at = datetime.now(timezone.utc)
+            s.last_run_status = result.status
+            s.last_run_summary = result.summary
+            db.commit()
+            db.refresh(s)
+            return AuditScheduleOut(
+                enabled=s.enabled, ssh_username=s.ssh_username, has_password=bool(s.ssh_password_encrypted),
+                daily_run_time=s.daily_run_time, schedule_timezone=s.schedule_timezone,
+                next_due_at=scheduled_audit.next_due(s), management_ip_note=s.management_ip_note,
+                last_run_at=s.last_run_at, last_run_status=s.last_run_status, last_run_summary=s.last_run_summary,
+            )
+    except ncm_lock.Busy:
+        raise HTTPException(409, 'A scheduled audit is running. Retry after it finishes.') from None
 
 
 _SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}

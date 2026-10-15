@@ -1,4 +1,4 @@
-"""UTC daily backups with durable checkpoints and cross-process ownership.
+"""Calendar-aware daily backups with UTC checkpoints and cross-process ownership.
 
 Catch up the most recent due occurrence only. Failed/interrupted occurrences
 are not automatically replayed; Run Now is an explicit retry. Locks survive
@@ -7,9 +7,8 @@ commits, and the OS/database releases them after process death.
 from __future__ import annotations
 import asyncio
 import logging
-import re
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -22,17 +21,7 @@ logger = logging.getLogger(__name__)
 _POLL_INTERVAL_SECONDS = 30
 
 
-def utc(value):
-    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
-
-
-def due_slot(daily_run_time, now):
-    if not isinstance(daily_run_time, str) or not re.fullmatch(r'([01]\d|2[0-3]):[0-5]\d', daily_run_time):
-        raise ValueError('Invalid daily time; edit the schedule using HH:MM UTC.')
-    now = utc(now)
-    hour, minute = map(int, daily_run_time.split(':'))
-    slot = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    return slot if slot <= now else slot - timedelta(days=1)
+from .schedule_time import utc, due_slot, next_slot
 
 
 def should_run_now(daily_run_time, last_run_at, now):
@@ -52,12 +41,12 @@ def next_due(schedule, state, now=None):
         return None
     now = utc(now or datetime.now(timezone.utc))
     try:
-        slot = due_slot(schedule.daily_run_time, now)
+        slot = due_slot(schedule.daily_run_time, now, schedule.schedule_timezone)
     except ValueError:
         return None
     checkpoint = state.last_slot if state else schedule.last_run_at
     if (checkpoint and utc(checkpoint) >= slot) or (schedule.created_at and utc(schedule.created_at) > slot):
-        slot += timedelta(days=1)
+        slot = next_slot(schedule.daily_run_time, max(now, utc(checkpoint)) if checkpoint else now, schedule.schedule_timezone)
     return slot
 
 
@@ -98,7 +87,7 @@ def run_schedule(db, schedule_id, *, now=None, manual=False, actor=None):
             return state
         invalid_time = None
         try:
-            slot = due_slot(schedule.daily_run_time, now)
+            slot = due_slot(schedule.daily_run_time, now, schedule.schedule_timezone)
         except ValueError as exc:
             invalid_time = str(exc)
             slot = now.replace(hour=0, minute=0, second=0, microsecond=0)

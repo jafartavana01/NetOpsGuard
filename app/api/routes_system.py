@@ -6,6 +6,7 @@ System status endpoints backing the Phase 1 dashboard (spec section
 status. All routes require an authenticated admin.
 """
 from __future__ import annotations
+from ..version import metadata as application_metadata
 
 import platform
 from datetime import datetime, timezone
@@ -51,4 +52,17 @@ def system_status(
         "database": db_status,
         "services": services,
         "build_info": build_info_service.get_public_build_info(),
+        "application_version": application_metadata(),
     }
+
+
+@router.get('/timezone')
+def scheduling_timezone(_admin: AdminUser = Depends(get_current_admin)):
+    from zoneinfo import available_timezones
+    from ..services import timezone_preference
+    return {'timezone': timezone_preference.load(), 'timezones': sorted(available_timezones())}
+
+
+@router.get('/version')
+def installed_version(_admin: AdminUser = Depends(get_current_admin)):
+    return application_metadata()

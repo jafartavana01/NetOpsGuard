@@ -45,6 +45,7 @@
     <p class="nav-empty" id="nav-empty" hidden>No matching destinations.</p>
   </nav>
 
+  <div class="sidebar-footer" aria-label="Installed application version">NetOpsGuard {{ application_metadata().version if application_metadata is defined else "version unavailable" }}</div>
   <div class="sidebar-footer">
     <span class="dot" id="daemon-dot"></span>
     <span id="daemon-label">tac_plus-ng — checking…</span>

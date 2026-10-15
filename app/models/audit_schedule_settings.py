@@ -52,16 +52,13 @@ class AuditScheduleSettings(Base):
     ssh_username: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     ssh_password_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # 24-hour "HH:MM" in the server's own local time -- deliberately a
-    # single daily time, not a full cron expression: the request was
-    # "by default every day," and a single field an admin can read at
-    # a glance is more honest about what this actually offers than a
-    # cron syntax input inviting schedules this was never built to
-    # guarantee (e.g. sub-daily runs against a fleet that can take
-    # meaningful time to audit one device at a time).
+    # NULL preserves legacy UTC execution; explicit IANA zone is opt-in.
+    schedule_timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
     daily_run_time: Mapped[str] = mapped_column(String(5), nullable=False, default="02:00")
 
     management_ip_note: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    last_slot: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_run_status: Mapped[str | None] = mapped_column(String(32), nullable=True)  # completed | failed | partial

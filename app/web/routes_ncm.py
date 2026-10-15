@@ -29,6 +29,8 @@ from .operations_context import operations_permissions
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+from ..version import metadata as application_metadata
+templates.env.globals["application_metadata"] = application_metadata
 
 router = APIRouter()
 

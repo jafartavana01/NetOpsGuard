@@ -89,7 +89,7 @@ def _schedule_out(s: NcmBackupSchedule, db: Session | None = None) -> NcmSchedul
     return NcmScheduleOut(
         id=str(s.id), name=s.name, description=s.description, enabled=s.enabled,
         device_ids=_split(s.device_ids), device_group_ids=_split(s.device_group_ids),
-        configuration_types=_split(s.configuration_types), daily_run_time=s.daily_run_time,
+        configuration_types=_split(s.configuration_types), daily_run_time=s.daily_run_time, schedule_timezone=s.schedule_timezone,
         retention_days=s.retention_days, created_by=s.created_by, updated_by=s.updated_by,
         last_run_at=s.last_run_at, created_at=s.created_at, updated_at=s.updated_at,
         next_due_at=ncm_scheduler.next_due(s, state),
@@ -485,7 +485,7 @@ def create_schedule(
         name=payload.name, description=payload.description, enabled=payload.enabled,
         device_ids=",".join(payload.device_ids), device_group_ids=",".join(payload.device_group_ids),
         configuration_types=",".join(payload.configuration_types or ["running"]),
-        daily_run_time=payload.daily_run_time, retention_days=payload.retention_days,
+        daily_run_time=payload.daily_run_time, schedule_timezone=payload.schedule_timezone, retention_days=payload.retention_days,
         created_by=admin.username, updated_by=admin.username,
     )
     db.add(s)
@@ -526,6 +526,8 @@ def update_schedule(
             s.device_ids = ",".join(payload.device_ids)
             s.device_group_ids = ",".join(payload.device_group_ids)
             s.configuration_types = ",".join(payload.configuration_types or ["running"])
+            if "schedule_timezone" in payload.model_fields_set:
+                s.schedule_timezone = payload.schedule_timezone
             s.daily_run_time = payload.daily_run_time
             s.retention_days = payload.retention_days
             s.updated_by = admin.username

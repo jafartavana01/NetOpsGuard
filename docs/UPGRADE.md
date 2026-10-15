@@ -30,3 +30,12 @@ For first checks and service logs, see [Troubleshooting](TROUBLESHOOTING.md). Fo
 The scheduled-backup update adds a separate execution-state table at application startup; it preserves existing schedules, encrypted Device Credentials, and backup history. Stop old application workers before starting the upgraded version so old and new schedulers cannot run together. The database account needs permission to create the new table. A failed initialization prevents startup rather than running without execution tracking.
 
 Check each schedule's UTC time and status after upgrading. Historical attempts without detailed outcome records are not labelled successful. Review interrupted jobs before an explicit retry. Back up the database before upgrading; rolling back the application also restores the older scheduler's limitations and must not be mixed with new workers. The additive state table can remain in place when rolling back.
+
+
+### Local-time scheduling and application version metadata
+
+Stop all old application workers before upgrading. Startup adds nullable `schedule_timezone` fields and an audit occurrence checkpoint; existing records remain NULL/Legacy UTC and are not shifted. The migration is repeatable on SQLite and PostgreSQL and aborts on failure. No credentials, policies, archives or audit history are rewritten. Rehearse the upgrade on a restored database before production deployment.
+
+Review schedules before explicitly converting them. Do not roll back to a UTC-only application while timezone-aware schedules are enabled: old code would interpret their wall-clock values as UTC. Disable those schedules first and restore a matched application/database backup if rollback is necessary. Preserve timezone preferences with the rest of `/etc/aaa-platform`.
+
+The installer copies the repository-tracked application version and records a clean Git checkout's commit separately from daemon build metadata. Source archives still display the application version; their commit is shown as not recorded. Never substitute the tac_plus-ng build commit for the application commit. Release operators should follow [Application releases](RELEASING.md).

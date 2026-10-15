@@ -124,3 +124,17 @@ The API tests exercise permission denial, CSRF rejection, persisted blocked outc
 With a disposable `F03_POSTGRES_DSN`, the PostgreSQL suite repeats the database/SSH contracts in an isolated schema. Without it the suite explicitly skips. SQLite-specific child-process tests are not PostgreSQL verification; multi-process PostgreSQL worker termination, advisory-lock connection loss, and concurrent transactions remain native acceptance cases. Do not infer distributed exactly-once execution during a database network partition from ordinary advisory-lock tests.
 
 Controlled SQLite/SSH integration is the scheduled-backup acceptance evidence in this environment. PostgreSQL and physical Cisco acceptance remain pending. The older GUI-only results above did not establish scheduler correctness. Audit-comparison classification, directory TLS verification, and role-deletion privilege fallback remain separate unresolved issues.
+
+
+## Scheduling and application releases
+
+```sh
+python -m unittest discover -s tests/platform -p 'test_*.py'
+node tests/platform/browser.cjs
+python tests/platform/postgres_integration.py
+python tests/ncm_scheduler/test_integration.py
+python tests/ncm_scheduler/test_api.py
+node tests/ncm_scheduler/browser.cjs
+```
+
+The focused suite checks timezone conversion, DST folds/gaps, legacy preservation, repeatable SQLite upgrades, authenticated/CSRF-protected preferences, durable audit claims, and a timezone-aware NCM backup over a controlled loopback SSH server. Release tests use isolated bare Git repositories to verify concurrent publication and atomic rejection. Browser tests render real templates with synthetic API replies. These checks do not certify physical Cisco devices, native AAA daemons, GitHub Actions permissions, or PostgreSQL when no disposable DSN is configured.

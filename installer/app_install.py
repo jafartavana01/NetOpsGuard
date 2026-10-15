@@ -236,6 +236,20 @@ def copy_application_source(project_root: Path) -> None:
     if APP_DIR.exists():
         shutil.rmtree(APP_DIR)
     shutil.copytree(src, APP_DIR)
+    # Record only the installed source commit; never copy daemon build identity here.
+    import json
+    import re
+    import subprocess
+    version = (APP_DIR / 'VERSION').read_text().strip()
+    commit = None
+    try:
+        value = subprocess.check_output(['git', '-C', str(project_root), 'rev-parse', 'HEAD'], text=True, stderr=subprocess.DEVNULL).strip()
+        dirty = subprocess.check_output(['git', '-C', str(project_root), 'status', '--porcelain', '--untracked-files=no'], text=True)
+        if not dirty and re.fullmatch(r'[0-9a-f]{40}', value):
+            commit = value
+    except (OSError, subprocess.CalledProcessError):
+        pass  # Archive installation: version remains available, commit unrecorded.
+    (APP_DIR / 'installed_release.json').write_text(json.dumps({'version': version, 'commit': commit}))
     utils.ok("Application source installed.")
 
 

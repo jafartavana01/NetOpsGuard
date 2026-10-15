@@ -89,6 +89,8 @@ def init_db() -> None:
     Base.metadata.create_all(bind=get_engine())
     from .group_authority_migration import migrate
     migrate(get_engine())
+    from .scheduling_migration import migrate as migrate_scheduling
+    migrate_scheduling(get_engine())
     _apply_additive_column_migrations()
 
 

@@ -11,6 +11,7 @@ but never had a GUI to show. Diagnostics surfaces what the platform
 already tracks; it doesn't introduce new tracking.
 """
 from __future__ import annotations
+from ..version import metadata as application_metadata
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -46,6 +47,7 @@ def diagnostics_overview(
     return {
         "services": services,
         "build_info": build_info_service.get_public_build_info(),
+        "application_version": application_metadata(),
     }
 
 

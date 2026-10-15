@@ -83,7 +83,7 @@ Restart all application workers when upgrading; do not run old scheduling writer
 
 ### Scheduled NCM backups
 
-NCM → Backup Schedules uses **UTC**, independent of the browser or server timezone. Existing saved times are not converted: the previous executor also compared them against UTC even though its form said server-local time. Review the displayed UTC time after upgrading.
+NCM → Backup Schedules preserves existing times as **Legacy UTC**, independent of the browser or server timezone. New schedules can use an explicit IANA timezone. Review the saved timezone after upgrading; see Application timezone and daily schedules below.
 
 Enabled schedules are checked approximately every 30 seconds while the application is running. After downtime, only the most recent due occurrence is considered; the scheduler does not replay every missed day. Newly created schedules start with the next occurrence. An attempted occurrence, including a blocked or interrupted attempt, is not automatically retried. Review the recorded outcome and use **Run Now** to retry explicitly. Moving the daily time later can create another due occurrence that day; editing a running schedule is refused until it finishes.
 
@@ -100,3 +100,16 @@ Configuration retrieval must finish with the supported device prompt. A timeout 
 Select Delete, review the selected names and any blocking references, then use **Confirm deletion**. No typed confirmation is required. Cancel is initially focused, and closing the dialog does not submit a deletion.
 
 Completed/failed Security Center audit history is retained when its inventory device is removed. Active audits still block deletion until they finish. Policies, backup schedules, and other live configuration references must be resolved explicitly; removing a device never silently removes its policy restriction. Deleting dependent policies remains a separate, clearly listed destructive choice. Running AAA configuration changes only after a separate successful Apply.
+
+
+## Application timezone and daily schedules
+
+Under **System → Settings**, search for an IANA timezone such as `Asia/Tehran` or `Europe/London`, then save it. The browser timezone is a suggestion only. The initial application preference is UTC; the Ubuntu host timezone is never an implicit scheduling input. Changing this preference requires no service restart and does not change saved schedules.
+
+New backup schedules use the application preference. Every schedule retains its own timezone. Old NCM and Security Center schedules display **Legacy UTC** and keep their original UTC execution time. To convert one, edit its timezone and daily wall-clock time explicitly, then save. Saving other fields does not convert it. API clients that omit `schedule_timezone` preserve the current setting on updates; omitted or null timezone on creation retains legacy UTC compatibility.
+
+The scheduler calculates each local calendar occurrence with IANA timezone rules, then records its UTC instant. At a fall-back transition, a repeated time runs **once, at the first occurrence**. At a spring-forward transition, a nonexistent local time is **skipped for that date**. This also handles non-hour transitions and skipped calendar dates. NCM catches up only the latest valid missed occurrence; timezone-aware audits use the same rule. Legacy audits keep their existing same-UTC-day behavior. Execution timestamps and checkpoints remain UTC.
+
+Schedule pages show the saved timezone and local next/previous instants, with UTC equivalents for troubleshooting. These are nominal due times, not guaranteed start times. Busy workers can defer execution. A blocked, failed or interrupted attempt consumes that occurrence: inspect the result before an explicit Run Now. Audit edits and Run Now cannot overlap its active daily scheduler. Moving a schedule's time can deliberately create another due occurrence; review the next due time after saving.
+
+Timezone preferences are saved independently in `/etc/aaa-platform/config/timezone.json`; include this directory in configuration backups. Use the same IANA timezone data on all workers and restart application workers after timezone-data upgrades.

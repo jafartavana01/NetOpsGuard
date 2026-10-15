@@ -164,3 +164,20 @@ def restart_management_service(
     except service_control.ServiceControlError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc))
     return {"status": "restarting"}
+
+
+class TimezoneUpdate(BaseModel):
+    timezone: str
+
+    @field_validator('timezone')
+    @classmethod
+    def valid_timezone(cls, value):
+        from ..services.schedule_time import validate_zone
+        return validate_zone(value)
+
+
+@router.put('/timezone', dependencies=[Depends(verify_csrf)])
+def update_timezone(payload: TimezoneUpdate, _admin: AdminUser = Depends(get_current_superadmin)):
+    from ..services import timezone_preference
+    timezone_preference.save(payload.timezone)
+    return {'timezone': timezone_preference.load(), 'restart_required': False}

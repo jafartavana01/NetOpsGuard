@@ -10,7 +10,7 @@
   <div class="content-head" style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
     <div>
       <h1>Backup Schedules</h1><p>Backups use the shared SSH account in <a href="/platform/device-credentials">System → Device Credentials</a>.</p>
-      <p class="content-sub">Daily configuration backups run on the server. Times are UTC. The most recent missed occurrence is caught up after restart. Next due is a nominal time; busy workers may start later.</p>
+      <p class="content-sub">Daily configuration backups run on the server. Each schedule retains its saved timezone. The most recent missed occurrence is caught up after restart. Next due is a nominal time; busy workers may start later.</p>
     </div>
     <button type="button" class="btn-secondary" id="refresh-schedules-btn">Refresh status</button>
     <button type="button" class="btn-primary btn-with-icon" id="add-schedule-btn" style="width:auto;">{{ icons.icon('plus', 16) }}New Schedule</button>
@@ -39,9 +39,10 @@
         <textarea id="schedule-description" rows="2"></textarea>
       </label>
 
+<label class="field"><span class="field-label">Schedule timezone</span><select id="schedule-timezone"><option value="">Legacy UTC — preserve existing execution</option></select><span class="field-hint">Selecting a timezone explicitly converts the daily time shown below to that timezone. Existing schedules remain UTC until you save a different choice. Repeated DST times run once (first occurrence); nonexistent times are skipped.</span></label>
       <div class="field-row">
         <label class="field">
-          <span class="field-label">Daily run time (UTC)</span>
+          <span class="field-label">Daily run time in selected timezone</span>
           <div class="field-icon-wrap">
             <span class="field-icon">{{ icons.icon('history', 14) }}</span>
             <input type="time" id="schedule-time" required value="02:00">
@@ -118,20 +119,20 @@
       return;
     }
     wrap.innerHTML =
-      '<table class="data-table"><thead><tr><th>Name</th><th>Status</th><th>Daily · UTC</th><th>Types</th>' +
+      '<table class="data-table"><thead><tr><th>Name</th><th>Status</th><th>Daily · timezone</th><th>Types</th>' +
       '<th>Targets</th><th>Retention</th><th>Execution</th><th></th></tr></thead><tbody>' +
       schedules.map((s) =>
         '<tr><td>' + esc(s.name) + (s.description ? '<div class="content-sub">' + esc(s.description) + '</div>' : '') + '</td>' +
         '<td><span class="badge sec-sev-badge ' + (s.enabled ? 'is-signal' : '') + '">' +
         (s.enabled ? 'Enabled' : 'Disabled') + '</span></td>' +
-        '<td class="cell-mono">' + esc(s.daily_run_time) + '</td>' +
+        '<td class="cell-mono">' + esc(s.daily_run_time) + '<div>' + esc(s.schedule_timezone || 'UTC · legacy') + '</div></td>' +
         '<td class="content-sub">' + esc(s.configuration_types.join(', ')) + '</td>' +
         '<td class="content-sub">' + s.device_ids.map(id=>esc(devices.find(d=>d.device_id===id)?.device_name||'Unavailable device '+id)).join(', ') + '<div>' + s.device_group_ids.map(id=>esc(groups.find(g=>g.id===id)?.name||'Unavailable group '+id)).join(', ') + '</div></td>' +
         '<td class="cell-mono">' + s.retention_days + 'd</td>' +
          '<td class="content-sub">' + esc(s.execution_status || 'never') +
-        '<div>Next due: ' + (s.next_due_at ? esc(new Date(s.next_due_at).toISOString()) : '—') + '</div>' +
-        '<div>Attempt: ' + (s.last_attempted_at ? esc(new Date(s.last_attempted_at).toLocaleString()) : 'never') + '</div>' +
-        '<div>Success: ' + (s.last_success_at ? esc(new Date(s.last_success_at).toLocaleString()) : 'never') + '</div>' +
+        '<div>Next due: ' + (s.next_due_at ? esc(ScheduleTime.format(s.next_due_at,s.schedule_timezone)) : '—') + '</div>' +
+        '<div>Attempt: ' + (s.last_attempted_at ? esc(ScheduleTime.format(s.last_attempted_at,s.schedule_timezone)) : 'never') + '</div>' +
+        '<div>Success: ' + (s.last_success_at ? esc(ScheduleTime.format(s.last_success_at,s.schedule_timezone)) : 'never') + '</div>' +
         '<div>' + (s.succeeded || 0) + ' succeeded / ' + (s.failed || 0) + ' failed / ' + (s.total_devices || 0) + ' total' + (s.total_devices>(s.succeeded||0)+(s.failed||0)?' · '+(s.total_devices-(s.succeeded||0)-(s.failed||0))+' not yet confirmed':'') + '</div>' +
         (s.execution_error ? '<div role="status">' + esc(s.execution_error) + '</div>' : '') +
         (s.last_job_id ? '<a href="/ncm/jobs?job='+encodeURIComponent(s.last_job_id)+'">Backup job and configurations</a>' : '') + '</td>' +
@@ -169,6 +170,7 @@
 
   function openModal(schedule) {
     dirty=false;
+    ScheduleTime.choices(document.getElementById('schedule-timezone'),schedule ? (schedule.schedule_timezone || null) : undefined);
     document.getElementById('schedule-error').hidden = true;
     document.getElementById('schedule-modal-title').textContent = schedule ? 'Edit Schedule' : 'New Schedule';
     document.getElementById('schedule-id').value = schedule ? schedule.id : '';
@@ -217,6 +219,7 @@
     const errorBox = document.getElementById('schedule-error');
     errorBox.hidden = true;
     if(saving||!targetsReady)return;
+    if(document.getElementById('schedule-timezone').dataset.zoneLoading==='true'){errorBox.textContent='Wait for timezone preferences to finish loading.';errorBox.hidden=false;return;}
 
     const deviceIds = [...document.querySelectorAll('.device-check:checked')].map((c) => c.value);
     const groupIds = [...document.querySelectorAll('.group-check:checked')].map((c) => c.value);
@@ -235,6 +238,7 @@
       device_group_ids: groupIds,
       configuration_types: document.getElementById('schedule-types').value.split(','),
       daily_run_time: document.getElementById('schedule-time').value,
+      schedule_timezone: document.getElementById('schedule-timezone').value || null,
       retention_days: Number(document.getElementById('schedule-retention').value) || 90,
     };
 

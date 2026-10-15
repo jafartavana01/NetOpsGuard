@@ -151,6 +151,9 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     def _on_startup() -> None:
+        from .database import get_engine
+        from .scheduling_migration import migrate
+        migrate(get_engine())
         _sync_module_states()
         _seed_command_categories()
         _seed_admin_role_templates()

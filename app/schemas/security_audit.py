@@ -10,6 +10,9 @@ from app.security_center.engine's internal dataclasses and can evolve
 independently.
 """
 from __future__ import annotations
+from typing import Annotated
+from pydantic import AfterValidator
+from ..services.schedule_time import validate_zone
 
 from datetime import datetime
 
@@ -148,6 +151,8 @@ class FleetFindingOut(BaseModel):
 
 
 class AuditScheduleOut(BaseModel):
+    next_due_at: datetime | None = None
+    schedule_timezone: str | None = None
     enabled: bool
     ssh_username: str
     has_password: bool
@@ -159,9 +164,10 @@ class AuditScheduleOut(BaseModel):
 
 
 class AuditScheduleUpdateRequest(BaseModel):
+    schedule_timezone: Annotated[str | None, AfterValidator(validate_zone)] = None
     enabled: bool
     model_config = ConfigDict(extra="forbid")
-    daily_run_time: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$", description="24-hour HH:MM, server-local time.")
+    daily_run_time: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$", description="24-hour HH:MM, UTC for legacy schedules; wall clock in schedule_timezone otherwise.")
     management_ip_note: str | None = Field(default=None, max_length=255)
 
 

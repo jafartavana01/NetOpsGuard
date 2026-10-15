@@ -111,7 +111,7 @@ class CredentialsTests(unittest.TestCase):
         from app.services import scheduled_audit,ncm_scheduler
         self.seed()
         for module,method in [(scheduled_audit,'run_scheduled_audit')]:
-            db=MagicMock();db.query.return_value.filter.return_value.all.return_value=[NS(daily_run_time='00:00',last_run_at=None)]
+            db=Session(self.engine)  # exercise the scheduler's real cross-process lock/claim
             with patch.object(module,'get_sessionmaker',return_value=lambda:db),patch.object(credentials,'get_settings',return_value=credentials.get_settings(self.db)),patch.object(module,'should_run_now',return_value=True),patch.object(module,method,return_value=NS(status='completed',summary='Done')) as run:
                 module._poll_once();self.assertEqual(run.call_args.kwargs['ssh_username'],'legacy')
                 kw=run.call_args.kwargs;self.assertEqual(kw.get('ssh_password') or security.decrypt_secret(kw['ssh_password_encrypted']),'old-secret')

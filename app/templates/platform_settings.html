@@ -6,8 +6,16 @@
 {% block view_content %}
 <main class="content admin-workspace">
   {% include "partials/admin_workspace.html" %}
+  <section class="panel"><div class="panel-head">Application timezone</div><div class="panel-body">
+    <p id="timezone-active" role="status">Loading timezone…</p>
+    <form id="timezone-form"><label class="field"><span class="field-label">IANA timezone (search or type)</span><input id="timezone-choice" list="timezone-options" required autocomplete="off"><datalist id="timezone-options"></datalist></label>
+    <p id="timezone-suggestion" class="field-hint"></p>
+    <p class="field-hint">Sets the default for new schedules. Existing schedules keep their saved timezone; convert them explicitly in each schedule editor. No service restart required.</p>
+    <button id="timezone-save" class="btn-primary" disabled>Save timezone</button><div id="timezone-error" role="alert" hidden></div></form>
+  </div></section>
       <div class="content-head">
-        <h1>Network &amp; TLS Settings</h1>
+        <h1>System Settings</h1>
+        {% if application_metadata is defined %}{% set installed = application_metadata() %}<p class="content-sub">NetOpsGuard {{ installed.version }} · Installed commit: {{ installed.commit or "Not recorded" }}</p>{% endif %}
         <p class="content-sub">Save desired settings, then activate them explicitly. Web and TLS changes require a management restart; the TACACS+ port requires AAA Configuration Apply.</p>
       </div>
 
@@ -217,6 +225,14 @@
       ui.error('restart-result','Restart request accepted. Reconnect and check service status; completion is not yet verified.');
     });
   });
+})();
+</script>
+<script>
+(()=>{let alive=true,busy=false;AAAPlatform.onViewLeave(()=>alive=false);const $=id=>document.getElementById(id);
+const error=m=>{$('timezone-error').textContent=m;$('timezone-error').hidden=false;};
+$('timezone-suggestion').textContent='Browser suggestion: '+(Intl.DateTimeFormat().resolvedOptions().timeZone||'Unavailable')+' (not saved automatically).';
+(async()=>{try{const r=await AAAPlatform.authedFetch('/api/system/timezone');if(!r.ok)throw Error('Could not load timezone settings.');const d=await r.json();if(!alive)return;if(!Array.isArray(d.timezones))throw Error('Timezone settings unavailable.');$('timezone-active').textContent='Active timezone: '+d.timezone;$('timezone-choice').value=d.timezone;$('timezone-options').replaceChildren(...d.timezones.map(z=>new Option(z,z)));$('timezone-save').disabled=false;}catch(e){if(alive)error(e.message);}})();
+$('timezone-form').onsubmit=async e=>{e.preventDefault();if(busy)return;busy=true;$('timezone-save').disabled=true;try{const zone=$('timezone-choice').value;const r=await AAAPlatform.authedFetch('/api/platform-settings/timezone',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({timezone:zone})});const d=await r.json();if(!r.ok||d.timezone!==zone)throw Error(typeof d.detail==='string'?d.detail:'Timezone was not saved. Choose a valid IANA timezone.');if(alive){$('timezone-active').textContent='Active timezone: '+d.timezone;$('timezone-error').hidden=true;AAAPlatform.toast('Timezone saved. Existing schedules are unchanged.');}}catch(e){if(alive)error(e.message||'Could not save timezone.');}finally{busy=false;if(alive)$('timezone-save').disabled=false;}};
 })();
 </script>
 {% endblock %}

@@ -185,59 +185,84 @@ def run_scheduled_audit(
     return result
 
 
-def should_run_now(daily_run_time: str, last_run_at: datetime | None, now: datetime) -> bool:
-    """
-    True exactly when it's time to kick off today's scheduled run: the
-    current time is at or past the configured daily_run_time, AND a
-    run hasn't already happened today (compared by DATE, not exact
-    time, since this is called repeatedly on a polling interval --
-    see _POLL_INTERVAL_SECONDS -- not only at the precise scheduled
-    minute). Pulled out as its own pure function specifically so this
-    decision could be verified with real test cases independent of
-    the database/SSH/asyncio machinery around it.
-    """
-    run_hour, run_minute = map(int, daily_run_time.split(":"))
-    scheduled_today = now.replace(hour=run_hour, minute=run_minute, second=0, microsecond=0)
-    if now < scheduled_today:
-        return False
-    if last_run_at is not None and last_run_at.date() == now.date():
-        return False
-    return True
+from . import ncm_lock
+from .schedule_time import utc, due_slot, next_slot, occurrence
 
 
-def _poll_once() -> None:
-    """
-    One scheduler tick, executed ENTIRELY inside a worker thread.
+def should_run_now(daily_run_time, last_run_at, now, schedule_timezone=None):
+    now = utc(now)
+    if schedule_timezone is None:
+        # Preserve legacy audit behavior: no catch-up of yesterday before today's time.
+        slot = occurrence(now.date(), daily_run_time)
+        return now >= slot and (last_run_at is None or utc(last_run_at).date() < now.date())
+    slot = due_slot(daily_run_time, now, schedule_timezone)
+    return last_run_at is None or utc(last_run_at) < slot
 
-    Opening a session, querying, running the audit and committing are
-    all blocking. Previously the queries and the commit ran directly in
-    the coroutine and only the audit was offloaded -- which meant a
-    slow query blocked the event loop, and an exhausted connection pool
-    blocked it indefinitely, leaving the process alive but serving
-    nothing.
 
-    It also passed a Session created on the event-loop thread into
-    `asyncio.to_thread`. SQLAlchemy sessions are not thread-safe. The
-    session is now created, used and closed on a single thread.
-    """
-    session_local = get_sessionmaker()
-    db: Session = session_local()
+def next_due(settings, now=None):
+    if not settings.enabled:
+        return None
+    now = utc(now or datetime.now(timezone.utc))
     try:
-        settings = device_credentials.get_settings(db)
-        if settings and settings.enabled and settings.ssh_username and settings.ssh_password_encrypted:
-            now = datetime.now(timezone.utc)
-            if should_run_now(settings.daily_run_time, settings.last_run_at, now):
-                logger.info("Scheduled Security Center audit starting for all enabled devices.")
-                result = run_scheduled_audit(
-                    db,
-                    ssh_username=settings.ssh_username,
-                    ssh_password_encrypted=settings.ssh_password_encrypted,
-                )
-                settings.last_run_at = datetime.now(timezone.utc)
+        checkpoint = settings.last_slot or settings.last_run_at
+        if should_run_now(settings.daily_run_time, checkpoint, now, settings.schedule_timezone):
+            return due_slot(settings.daily_run_time, now, settings.schedule_timezone)
+        if settings.schedule_timezone is None and checkpoint and utc(checkpoint).date() >= now.date():
+            today = occurrence(now.date(), settings.daily_run_time)
+            return next_slot(settings.daily_run_time, max(now, today, utc(checkpoint)))
+        return next_slot(settings.daily_run_time, max(now, utc(checkpoint)) if checkpoint else now, settings.schedule_timezone)
+    except ValueError:
+        return None
+
+
+def _poll_once(now=None):
+    now = utc(now or datetime.now(timezone.utc))
+    session_local = get_sessionmaker()
+    db = session_local()
+    try:
+        with ncm_lock.hold(db, 'security-audit-schedule'):
+            settings = device_credentials.get_settings(db)
+            if not settings:
+                return
+            # Lock acquisition proves a prior running owner no longer exists.
+            if settings.last_run_status == 'running':
+                settings.last_run_status = 'failed'
+                settings.last_run_summary = 'Previous audit was interrupted. Review audit history before retrying.'
+                db.commit()
+            if not settings.enabled:
+                return
+            checkpoint = settings.last_slot or settings.last_run_at
+            try:
+                if not should_run_now(settings.daily_run_time, checkpoint, now, settings.schedule_timezone):
+                    return
+                slot = due_slot(settings.daily_run_time, now, settings.schedule_timezone)
+            except ValueError:
+                settings.last_run_status = 'blocked'
+                settings.last_run_summary = 'Invalid saved daily time or timezone. Edit the audit schedule before retrying.'
+                db.commit()
+                return
+            settings.last_slot = slot
+            settings.last_run_at = now
+            settings.last_run_status = 'running'
+            settings.last_run_summary = 'Scheduled audit started.'
+            db.commit()  # durable claim before SSH, surviving worker death
+            if not device_credentials.configured(settings):
+                settings.last_run_status = 'blocked'
+                settings.last_run_summary = device_credentials.REQUIRED
+                db.commit()
+                return
+            try:
+                result = run_scheduled_audit(db, ssh_username=settings.ssh_username,
+                                             ssh_password_encrypted=settings.ssh_password_encrypted)
                 settings.last_run_status = result.status
                 settings.last_run_summary = result.summary
-                db.commit()
-                logger.info("Scheduled Security Center audit finished: %s", result.summary)
+            except Exception:
+                db.rollback()
+                settings.last_run_status = 'failed'
+                settings.last_run_summary = 'Audit execution failed. Review audit history and device connectivity.'
+            db.commit()
+    except ncm_lock.Busy:
+        return
     finally:
         db.close()
 
