@@ -90,6 +90,53 @@ class DeletionTests(unittest.TestCase):
         report = report or self.preview(targets)
         return service.execute(self.db, targets, operation, report['revision'], 'DELETE', self.admin)
 
+    def audit_history(self, status='completed'):
+        from app.models.audit_run import AuditRun, AuditFinding
+        run = AuditRun(device_id=self.r1.id, device_name='R1', source='live', status=status)
+        self.db.add(run); self.db.flush()
+        finding = AuditFinding(audit_run_id=run.id, device_id=self.r1.id,
+            domain='management', check_id='TEST', title='Preserved evidence', status='fail', severity='high')
+        self.db.add(finding); self.db.commit()
+        return run, finding
+
+    def test_completed_audit_history_does_not_block_device_deletion(self):
+        from app.models.audit_run import AuditRun, AuditFinding
+        run, finding = self.audit_history()
+        rid, fid = run.id, finding.id
+        report = self.preview()
+        self.assertEqual(report['blocked'], 0)
+        self.assertTrue(report['dependencies'])
+        self.execute(report=report)
+        self.db.expire_all()
+        self.assertIsNone(self.db.get(NetworkDevice, self.r1.id))
+        self.assertEqual(self.db.get(AuditRun, rid).device_name, 'R1')
+        self.assertIsNone(self.db.get(AuditRun, rid).device_id)
+        self.assertIsNone(self.db.get(AuditFinding, fid).device_id)
+        self.assertEqual(self.db.get(AuditFinding, fid).title, 'Preserved evidence')
+        self.assertEqual(self.db.get(AuditFinding, fid).audit_run_id, rid)
+
+    def test_running_audit_still_blocks_device_deletion(self):
+        run, finding = self.audit_history('running')
+        self.assertTrue(self.preview()['blocked'])
+        with self.assertRaises(HTTPException): self.execute()
+        self.assertEqual(run.device_id, self.r1.id)
+        self.assertEqual(finding.device_id, self.r1.id)
+
+    def test_audit_history_does_not_hide_policy_blocker(self):
+        self.audit_history()
+        policy = self.policy(condition_device_id=self.r1.id)
+        with self.assertRaises(HTTPException): self.execute()
+        self.assertEqual(self.db.get(Policy, policy.id).condition_device_id, self.r1.id)
+
+    def test_audit_detachment_rolls_back_with_failed_deletion(self):
+        run, finding = self.audit_history()
+        with patch.object(service, '_checkpoint', side_effect=lambda stage: (_ for _ in ()).throw(RuntimeError('injected')) if stage == 'object_delete' else None):
+            with self.assertRaises(RuntimeError): self.execute()
+        self.db.expire_all()
+        self.assertEqual(run.device_id, self.r1.id)
+        self.assertEqual(finding.device_id, self.r1.id)
+        self.assertIsNotNone(self.db.get(NetworkDevice, self.r1.id))
+
     def test_direct_legacy_blocks(self):
         p = self.policy(condition_device_id=self.r1.id)
         report = self.preview()

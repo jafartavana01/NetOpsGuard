@@ -88,6 +88,8 @@ def policy_revision(db, policy):
 
 def inspect(db, targets):
     resolved = _targets(db, targets)
+    from ..models.audit_run import AuditRun, AuditFinding
+    audit_status = dict(db.query(AuditRun.id, AuditRun.status).all())
     dependencies = []
     policy_rows = [('tacacs', p) for p in db.query(Policy).all()] + [('radius', p) for p in db.query(RadiusPolicy).all()]
     groups = {g.id: g for g in db.query(PolicyConditionGroup).all()}
@@ -130,7 +132,12 @@ def inspect(db, targets):
                         continue
                     if kind == 'command_set' and model == CommandRule:
                         continue  # owned rules, displayed by the command-set detail/confirmation
-                    informational = (model == NetworkDevice and kind == 'device_group') or (model == TacacsUser and kind == 'user_group') or (model == CommandRule and kind == 'command_category')
+                    # Audit evidence is history, not authorization scope. Keep
+                    # its rows and name snapshots after inventory deletion.
+                    history = kind == 'device' and column.name == 'device_id' and (
+                        (model == AuditFinding and audit_status.get(row.audit_run_id) in ('completed', 'failed')) or
+                        (model == AuditRun and row.status in ('completed', 'failed')))
+                    informational = history or (model == NetworkDevice and kind == 'device_group') or (model == TacacsUser and kind == 'user_group') or (model == CommandRule and kind == 'command_category')
                     add(kind, oid, target, mapper.local_table.name, row.id,
                         getattr(row, 'name', getattr(row, 'username', getattr(row, 'device_name', mapper.local_table.name))),
                         column.name, blocking=not informational, dtype='membership' if model in (NetworkDevice, TacacsUser) else 'association')
@@ -241,6 +248,13 @@ def execute(db, targets, operation, revision, confirmation, actor):
                 if kind in ('policy', 'radius_policy'):
                     _delete_policy(db, 'tacacs' if kind == 'policy' else 'radius', oid, actor)
                 else:
+                    if kind == 'device':
+                        # Explicitly preserve history even on SQLite connections
+                        # where FK actions are not enabled. Never detach policy scope.
+                        from ..models.audit_run import AuditRun, AuditFinding
+                        for history_model in (AuditFinding, AuditRun):
+                            db.query(history_model).filter(history_model.device_id == oid).update(
+                                {'device_id': None}, synchronize_session='fetch')
                     db.delete(obj)
                     db.flush()
                 _checkpoint('object_delete')

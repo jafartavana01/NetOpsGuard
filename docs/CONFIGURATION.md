@@ -94,3 +94,9 @@ Backup jobs are serialized across application workers; devices within a job stil
 Retention removes only old snapshots created by the schedule. The latest snapshot for each device/configuration type, designated baselines, and deployment rollback/verification snapshots remain protected. Job history remains available, but a target may no longer link to an expired snapshot. Unchanged configuration still records a successful attempt and links to the existing archive rather than creating duplicate content.
 
 Configuration retrieval must finish with the supported device prompt. A timeout or incomplete response is a failed retrieval; it cannot replace a valid archived configuration. Supported device verification remains necessary before relying on the backups for recovery.
+
+### Deleting inventory items
+
+Select Delete, review the selected names and any blocking references, then use **Confirm deletion**. No typed confirmation is required. Cancel is initially focused, and closing the dialog does not submit a deletion.
+
+Completed/failed Security Center audit history is retained when its inventory device is removed. Active audits still block deletion until they finish. Policies, backup schedules, and other live configuration references must be resolved explicitly; removing a device never silently removes its policy restriction. Deleting dependent policies remains a separate, clearly listed destructive choice. Running AAA configuration changes only after a separate successful Apply.

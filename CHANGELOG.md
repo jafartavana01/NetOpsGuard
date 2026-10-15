@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — Simpler deletion confirmation
+
+- Deletion uses an explicit confirmation button without requiring typed text. Blocking references are grouped, and retained history no longer fills the dialog with repeated cards.
+- Completed and failed Security Center audits no longer prevent inventory-device deletion. Audit evidence and device-name history are retained; active audits, policy references, and other configuration dependencies remain protected.
+
+
 ## Unreleased — Scheduled backup reliability
 
 - NCM schedules record durable attempts and outcomes, catch up the latest missed UTC occurrence, and prevent concurrent execution across workers. A failed schedule no longer interrupts evaluation of unrelated schedules.

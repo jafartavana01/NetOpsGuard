@@ -16,7 +16,7 @@
   async function open(targets, onChanged=()=>location.reload()) {
     const body=el('div',undefined,'dependency-dialog');
     let report, busy=false;
-    const dialog=NetOpsUI.openDrawer({title:'Deletion dependency review',body,beforeClose:()=>!busy});
+    const dialog=NetOpsUI.openDrawer({title:'Delete selected items',body,beforeClose:()=>!busy});
     if(!dialog)return;
     async function refresh() {
       body.replaceChildren(el('p','Inspecting current dependencies…'));
@@ -26,18 +26,29 @@
     function render() {
       body.replaceChildren(el('h3',report.objects.map(o=>o.name).join(', ')),el('p',staged,'dependency-warning'));
       body.append(el('p',`${report.total_selected} selected · ${report.safe_to_delete} safe to delete · ${report.blocked} blocked · ${report.policies.length} directly dependent policies`,'dependency-summary'));
-      body.append(el('p','Preview only. The server rechecks objects and references inside the deletion transaction; changed dependencies require another review.'));
+      if(report.blocked)body.append(el('p','Some items are still in use. Review the blocking references below before deleting.'));
+      const history=report.dependencies.filter(d=>!d.blocks_deletion);
+      if(history.length)body.append(el('p','Related history and membership links will be handled safely. Security audit history is retained.'));
       if(!report.dependencies.length)body.append(el('p','No blocking dependencies found. Review the object names before confirming.'));
-      for(const d of report.dependencies) {
+      const blockers=new Map();
+      for(const d of report.dependencies.filter(d=>d.blocks_deletion)) {
+        const key=[d.referencing_type,d.referencing_id,d.dependency_type].join(':');
+        if(!blockers.has(key))blockers.set(key,{...d,locations:[]});
+        blockers.get(key).locations.push(d.object_name+': '+d.reference_location);
+      }
+      for(const d of blockers.values()) {
         const card=el('section',undefined,'dependency-card');
-        card.append(el('strong',`${d.referencing_name} — ${d.enabled===null?'Association':d.enabled?'Enabled':'Disabled'}`));
+        card.append(el('strong',`${d.referencing_type==='security_audit_runs'?'Active security audit':d.referencing_name} — ${d.enabled===null?'In use':d.enabled?'Enabled':'Disabled'}`));
         card.append(el('p',`${d.protocol||d.referencing_type} · ${d.dependency_type==='empty_group'?'Removing these members would leave referenced group membership empty or unknown':d.dependency_type} · ${d.blocks_deletion?'Blocks deletion':'Informational'}`));
-        const details=el('details'); details.append(el('summary','Reference details'),el('code',d.reference_location)); card.append(details);
+        const details=el('details'); details.append(el('summary','Reference details'),el('code',d.locations.join(' · '))); card.append(details);
         if(d.referencing_type==='policy') {
           card.append(button('View Policy',()=>viewPolicy(d,card)));
           if(report.can_delete_policy)card.append(button('Delete Policy',()=>confirmIndividual(d),true));
           if(!d.automated_cleanup)card.append(el('p','This is a membership consequence, not a direct reference. Add/reassign members or explicitly edit the policy; automatic policy cleanup is unavailable.'));
-        } else if(d.blocks_deletion)card.append(el('p','Automatic cleanup is unsupported. Resolve this association in its owning workspace.'));
+        } else if(d.blocks_deletion){
+          card.append(el('p',d.referencing_type==='security_audit_runs'?'Wait for this audit to finish, then refresh.':d.referencing_type==='ncm_schedule'?'Edit the backup schedule and remove this target, then refresh.':'Remove or reassign this reference in its workspace, then refresh.'));
+          if(d.referencing_type==='ncm_schedule'){const link=el('a','Open Backup Schedules');link.href='/ncm/schedules';card.append(link);}
+        }
         body.append(card);
       }
       const actions=el('div',undefined,'dependency-actions');
@@ -67,17 +78,17 @@
       catch(e){AAAPlatform.toast(e.message,'error');}
     }
     function confirmation(operation,fresh,selected,title,individual=false) {
-      body.replaceChildren(el('h3',title),el('p',impact,'dependency-warning'),el('p',staged));
+      body.replaceChildren(el('h3',title),el('p',staged));
+      if(operation!=='delete'||selected.some(t=>['policy','radius_policy'].includes(t.type)))body.append(el('p',impact,'dependency-warning'));
+      if(selected.some(t=>t.type==='device'))body.append(el('p','Security audit history will be retained after the device is removed.'));
       body.append(el('p',operation==='cleanup'?'Only the directly dependent policies below will be deleted. Original objects will be retained.':operation==='cleanup_delete'?'The listed policies and original objects will be deleted in ONE transaction.':'The selected objects below will be deleted.'));
       const list=el('ul');
       for(const p of operation==='delete'?[]:fresh.policies)list.append(el('li',`${p.protocol}: ${p.name} — ${p.enabled?'Enabled':'Disabled'}`));
       for(const o of fresh.objects)list.append(el('li',`${operation==='cleanup'?'Retained':'Deleted'}: ${o.name}${typeof o.enabled==='boolean'?' — '+(o.enabled?'Enabled':'Disabled'):''}`));
       body.append(list,el('p',`${operation==='delete'?0:fresh.policies.length} directly dependent policies scheduled for deletion.`));
-      const label=el('label','Type DELETE to confirm this destructive operation');
-      const input=el('input');input.autocomplete='off';input.setAttribute('aria-label','Type DELETE');label.append(input);body.append(label);
       const error=el('p',undefined,'text-danger');error.setAttribute('role','alert');body.append(error);
       const go=button('Confirm deletion',async()=>{
-        if(input.value!=='DELETE'||busy)return;
+        if(busy)return;
         busy=true;dialog.panel.setAttribute('aria-busy','true');go.disabled=true;
         try {
           const result=await api('/api/dependencies/execute',{targets:selected,operation,revision:fresh.revision,confirmation:'DELETE'});
@@ -88,8 +99,8 @@
           else {await dialog.close();await onChanged();}
         }catch(e){busy=false;dialog.panel.removeAttribute('aria-busy');error.textContent=e.message+' Refresh Dependencies before trying again.';go.disabled=true;body.append(button('Refresh Dependencies',refresh));}
       },true);
-      go.disabled=true;input.addEventListener('input',()=>{go.disabled=input.value!=='DELETE';});
-      body.append(go,button('Back to dependencies',refresh));input.focus();
+      const cancel=button('Cancel',()=>dialog.close());
+      body.append(go,cancel,button('Back to dependencies',refresh));cancel.focus();
     }
     await refresh();
   }
