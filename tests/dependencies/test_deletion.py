@@ -331,12 +331,15 @@ class DeletionTests(unittest.TestCase):
         self.assertEqual(self.db.get(CommandRule,rid).command_pattern,'show')
         self.assertIsNone(self.db.get(CommandRule,rid).category_id)
 
-    def test_ncm_serialized_schedule_blocks(self):
+    def test_ncm_serialized_schedule_retained(self):
         from app.models.ncm import NcmBackupSchedule
         schedule=NcmBackupSchedule(id=uuid.uuid4(),name='Nightly',device_ids=str(self.r1.id))
         self.db.add(schedule);self.db.commit()
         self.assertTrue(any(d['referencing_type']=='ncm_schedule' for d in self.preview()['dependencies']))
-        with self.assertRaises(HTTPException): self.execute()
+        self.execute()
+        self.db.refresh(schedule)
+        self.assertEqual(schedule.device_ids, str(self.r1.id))
+        self.assertIsNone(self.db.get(NetworkDevice, self.r1.id))
 
     def test_direct_api_and_rbac_csrf(self):
         from fastapi import FastAPI

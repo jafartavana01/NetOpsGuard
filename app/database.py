@@ -91,6 +91,8 @@ def init_db() -> None:
     migrate(get_engine())
     from .scheduling_migration import migrate as migrate_scheduling
     migrate_scheduling(get_engine())
+    from .ncm_history_migration import migrate as migrate_ncm_history
+    migrate_ncm_history(get_engine())
     _apply_additive_column_migrations()
 
 

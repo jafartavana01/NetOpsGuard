@@ -59,8 +59,10 @@ class NcmConfiguration(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
+    # Immutable inventory identity, retained after inventory deletion.
+    # Deployment/collection must separately resolve a live NetworkDevice.
     device_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("network_devices.id", ondelete="CASCADE"), nullable=False, index=True
+        UUID(as_uuid=True), nullable=False, index=True
     )
     # Denormalised so history survives a device rename and stays
     # readable if the device row is later removed.
@@ -236,8 +238,10 @@ class NcmBaseline(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
+    # Immutable inventory identity, retained after inventory deletion.
+    # Deployment/collection must separately resolve a live NetworkDevice.
     device_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("network_devices.id", ondelete="CASCADE"), nullable=False, index=True
+        UUID(as_uuid=True), nullable=False, index=True
     )
     device_name: Mapped[str] = mapped_column(String(64), nullable=False)
     configuration_type: Mapped[str] = mapped_column(String(32), nullable=False, default="running", index=True)
@@ -289,8 +293,10 @@ class NcmCandidate(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     display_number: Mapped[int] = mapped_column(Integer, nullable=False, unique=True, index=True)
 
+    # Immutable inventory identity, retained after inventory deletion.
+    # Deployment/collection must separately resolve a live NetworkDevice.
     device_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("network_devices.id", ondelete="CASCADE"), nullable=False, index=True
+        UUID(as_uuid=True), nullable=False, index=True
     )
     device_name: Mapped[str] = mapped_column(String(64), nullable=False)
 

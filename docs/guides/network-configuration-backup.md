@@ -33,3 +33,13 @@ For job troubleshooting and schedule checks, consult [Troubleshooting](https://g
 ## Supported equipment
 
 Collection behavior depends on the device OS, SSH authentication, CLI output, and supported platform driver. Test representative device families and firmware versions before rolling out a backup policy broadly.
+
+## Removing an inventory device
+
+Select **Delete** on the Devices page and review the confirmation. If policies depend directly on a selected device, or deleting the selection would empty a device group used by an enabled policy, the confirmation lists the affected policies. Confirming removes those complete policies and the devices together. Removing policies requires policy-edit permission. Review the warning about later policy matches before confirming; AAA configuration is not applied automatically.
+
+NCM configuration archives, baselines, saved changes, completed jobs, and security audit history are retained. Archived versions remain readable and comparable using the original device identity. Saved changes cannot be deployed to a removed device. Adding another device with the same name does not transfer the old device's history.
+
+Backup schedules remain saved. Removed devices are not contacted, and a run with no remaining targets reports a blocked result. Edit the schedule when replacement targets are needed. Active jobs and other live configuration dependencies can still require attention before deletion.
+
+Back up the database before upgrading and restart the upgraded application before deleting inventory. Startup removes the cascading inventory links from NCM history tables while preserving their data. If that upgrade cannot complete, device deletion remains blocked. Rolling back application code does not restore those database constraints; restoring an older database can restore the old deletion behavior.

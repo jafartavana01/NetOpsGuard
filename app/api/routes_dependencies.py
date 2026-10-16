@@ -23,7 +23,7 @@ class Preview(BaseModel):
 
 
 class Mutation(Preview):
-    operation: Literal['delete', 'cleanup', 'cleanup_delete']
+    operation: Literal['delete', 'cleanup', 'cleanup_delete', 'device_delete']
     revision: str = Field(min_length=64, max_length=64)
     confirmation: Literal['DELETE']
 

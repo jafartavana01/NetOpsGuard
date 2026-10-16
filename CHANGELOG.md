@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0.3 — Device deletion with retained history
+
+- Device deletion uses one confirmation listing the complete affected policies. Authorized administrators can remove those policies and the selected devices atomically; policy restrictions are never silently cleared.
+- NCM archives, baselines, saved changes, completed job records, and security audit history remain available after inventory removal. Saved schedules retain their target selection; missing targets do not become an all-device selection.
+- Active operations still prevent deletion. Startup upgrades the historical NCM links so deleting inventory cannot cascade into archived configurations. Applying AAA configuration remains a separate action.
+
 ## 1.0.0.2 — Evidence-based audit comparison
 
 - Audit comparisons require an explicit comparable pass before confirming resolution. Missing checks, incomplete captures, changed scope, duplicate identities, and manual review no longer imply remediation.

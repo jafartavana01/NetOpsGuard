@@ -24,6 +24,15 @@
       catch(e) {body.replaceChildren(el('p',e.message,'text-danger'),button('Retry',refresh));}
     }
     function render() {
+      // The server supplies the complete policy impact, including empty groups.
+      // Older reports retain the existing dependency-review flow.
+      if(report.device_policies && targets.every(t=>t.type==='device') && report.can_delete &&
+          (!report.device_policies.length || report.can_cleanup) &&
+          !report.dependencies.some(d=>d.blocks_deletion && d.referencing_type!=='policy')) {
+        const preview={...report,policies:report.device_policies};
+        confirmation(preview.policies.length?'device_delete':'delete',preview,targets,'Delete selected devices');
+        return;
+      }
       body.replaceChildren(el('h3',report.objects.map(o=>o.name).join(', ')),el('p',staged,'dependency-warning'));
       body.append(el('p',`${report.total_selected} selected · ${report.safe_to_delete} safe to delete · ${report.blocked} blocked · ${report.policies.length} directly dependent policies`,'dependency-summary'));
       if(report.blocked)body.append(el('p','Some items are still in use. Review the blocking references below before deleting.'));
@@ -80,12 +89,12 @@
     function confirmation(operation,fresh,selected,title,individual=false) {
       body.replaceChildren(el('h3',title),el('p',staged));
       if(operation!=='delete'||selected.some(t=>['policy','radius_policy'].includes(t.type)))body.append(el('p',impact,'dependency-warning'));
-      if(selected.some(t=>t.type==='device'))body.append(el('p','Security audit history will be retained after the device is removed.'));
-      body.append(el('p',operation==='cleanup'?'Only the directly dependent policies below will be deleted. Original objects will be retained.':operation==='cleanup_delete'?'The listed policies and original objects will be deleted in ONE transaction.':'The selected objects below will be deleted.'));
+      if(selected.some(t=>t.type==='device'))body.append(el('p','NCM backups, baselines, saved changes, job history and security audits will be retained. Existing schedules remain saved; deleted devices cannot be contacted. A schedule with no remaining targets will report a blocked run.'));
+      body.append(el('p',operation==='cleanup'?'Only the directly dependent policies below will be deleted. Original objects will be retained.':['cleanup_delete','device_delete'].includes(operation)?'The listed policies and original objects will be deleted in ONE transaction.':'The selected objects below will be deleted.'));
       const list=el('ul');
       for(const p of operation==='delete'?[]:fresh.policies)list.append(el('li',`${p.protocol}: ${p.name} — ${p.enabled?'Enabled':'Disabled'}`));
       for(const o of fresh.objects)list.append(el('li',`${operation==='cleanup'?'Retained':'Deleted'}: ${o.name}${typeof o.enabled==='boolean'?' — '+(o.enabled?'Enabled':'Disabled'):''}`));
-      body.append(list,el('p',`${operation==='delete'?0:fresh.policies.length} directly dependent policies scheduled for deletion.`));
+      body.append(list,el('p',`${operation==='delete'?0:fresh.policies.length} affected policies scheduled for deletion.`));
       const error=el('p',undefined,'text-danger');error.setAttribute('role','alert');body.append(error);
       const go=button('Confirm deletion',async()=>{
         if(busy)return;
@@ -100,7 +109,9 @@
         }catch(e){busy=false;dialog.panel.removeAttribute('aria-busy');error.textContent=e.message+' Refresh Dependencies before trying again.';go.disabled=true;body.append(button('Refresh Dependencies',refresh));}
       },true);
       const cancel=button('Cancel',()=>dialog.close());
-      body.append(go,cancel,button('Back to dependencies',refresh));cancel.focus();
+      body.append(go,cancel);
+      if(!fresh.device_policies)body.append(button('Back to dependencies',refresh));
+      cancel.focus();
     }
     await refresh();
   }

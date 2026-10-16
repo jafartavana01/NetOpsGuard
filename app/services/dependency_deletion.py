@@ -90,6 +90,11 @@ def inspect(db, targets):
     resolved = _targets(db, targets)
     from ..models.audit_run import AuditRun, AuditFinding
     audit_status = dict(db.query(AuditRun.id, AuditRun.status).all())
+    from ..models.ncm import NcmBackupJob, NcmBackupJobTarget, NcmDeployment
+    from ..models.command_job import CommandJob, CommandJobTarget
+    backup_status = dict(db.query(NcmBackupJob.id, NcmBackupJob.status).all())
+    command_status = {i: value.lower() for i, value in db.query(CommandJob.id, CommandJob.status).all()}
+    terminal = {'completed', 'partial', 'failed', 'blocked', 'cancelled', 'success', 'succeeded', 'rolled_back', 'rollback_failed'}
     dependencies = []
     policy_rows = [('tacacs', p) for p in db.query(Policy).all()] + [('radius', p) for p in db.query(RadiusPolicy).all()]
     groups = {g.id: g for g in db.query(PolicyConditionGroup).all()}
@@ -136,7 +141,10 @@ def inspect(db, targets):
                     # its rows and name snapshots after inventory deletion.
                     history = kind == 'device' and column.name == 'device_id' and (
                         (model == AuditFinding and audit_status.get(row.audit_run_id) in ('completed', 'failed')) or
-                        (model == AuditRun and row.status in ('completed', 'failed')))
+                        (model == AuditRun and row.status in ('completed', 'failed')) or
+                        (model == NcmBackupJobTarget and backup_status.get(row.job_id) in terminal) or
+                        (model == NcmDeployment and row.status in terminal) or
+                        (model == CommandJobTarget and command_status.get(row.job_id) in terminal))
                     informational = history or (model == NetworkDevice and kind == 'device_group') or (model == TacacsUser and kind == 'user_group') or (model == CommandRule and kind == 'command_category')
                     add(kind, oid, target, mapper.local_table.name, row.id,
                         getattr(row, 'name', getattr(row, 'username', getattr(row, 'device_name', mapper.local_table.name))),
@@ -148,7 +156,7 @@ def inspect(db, targets):
         if field:
             for schedule in db.query(NcmBackupSchedule).all():
                 if str(oid) in [x.strip() for x in (getattr(schedule, field) or '').split(',')]:
-                    add(kind, oid, target, 'ncm_schedule', schedule.id, schedule.name, field, dtype='configuration')
+                    add(kind, oid, target, 'ncm_schedule', schedule.id, schedule.name, field, blocking=kind != 'device', dtype='configuration')
 
     # Evaluate membership consequences collectively (bulk may remove the final two members).
     inventory = config_compiler._scope_inventory(db)
@@ -175,6 +183,12 @@ def inspect(db, targets):
     report = dict(objects=object_list, dependencies=dependencies, policies=sorted(policies.values(), key=lambda p: (p['protocol'], p['id'])),
         total_selected=len(resolved), safe_to_delete=len(resolved)-len(blocked_ids), blocked=len(blocked_ids),
         warning=WARNING, deployed_configuration_changed=False)
+    if all(kind == 'device' for kind, _ in resolved):
+        affected = {(d['protocol'], d['referencing_id']) for d in dependencies if d['referencing_type'] == 'policy'}
+        report['device_policies'] = [dict(id=str(p.id), name=p.name, enabled=p.enabled, protocol=protocol,
+                                          revision=policy_revision(db, p)) for protocol, p in policy_rows
+                                     if (protocol, str(p.id)) in affected]
+        report['device_policies'].sort(key=lambda p: (p['protocol'], p['id']))
     owned_state = []
     for (kind, oid), obj in resolved.items():
         if kind in ('policy', 'radius_policy'):
@@ -220,26 +234,53 @@ def _delete_policy(db, protocol, pid, actor):
 
 
 def execute(db, targets, operation, revision, confirmation, actor):
-    if operation not in ('delete', 'cleanup', 'cleanup_delete') or confirmation != 'DELETE':
+    from contextlib import nullcontext
+    from . import ncm_lock
+    try:
+        # Collection holds this cross-process lock across SSH and commits.
+        # Do not detach inventory while a backup writer still owns the device.
+        lock = ncm_lock.hold(db, 'backup-writer') if any(t['type'] == 'device' for t in targets) else nullcontext()
+        with lock:
+            return _execute(db, targets, operation, revision, confirmation, actor)
+    except ncm_lock.Busy:
+        raise HTTPException(409, detail='A configuration backup is active. Wait for it to finish, then retry deletion.') from None
+
+
+def _execute(db, targets, operation, revision, confirmation, actor):
+    if operation not in ('delete', 'cleanup', 'cleanup_delete', 'device_delete') or confirmation != 'DELETE':
         raise HTTPException(400, detail='Explicit DELETE confirmation and a supported operation are required.')
     logger.warning('dependency request actor=%s operation=%s targets=%s', actor.username, operation, json.dumps(targets))
     try:
         guard(db)
         report = inspect(db, targets)
+        if any(t['type'] == 'device' for t in targets):
+            from sqlalchemy import inspect as inspect_schema
+            from ..ncm_history_migration import TABLES
+            connection = db.connection()
+            schema = inspect_schema(connection)
+            schema_name = connection.get_execution_options().get('schema_translate_map', {}).get(None)
+            if any(fk['referred_table'] == 'network_devices' and fk['constrained_columns'] == ['device_id']
+                   for name in TABLES for fk in schema.get_foreign_keys(name, schema=schema_name)):
+                raise HTTPException(409, detail='NCM history protection upgrade is required. Restart the upgraded application before deleting devices.')
         if revision is not None and revision != report['revision']:
             raise HTTPException(409, detail={'code': 'dependency.stale', 'message': 'Dependencies or objects changed. Review the refreshed preview.', 'report': report})
         if operation == 'delete' and report['blocked']:
             raise HTTPException(409, detail={'code': 'dependency.blocked', 'message': 'Resolve dependencies before deleting.', 'report': report})
         if operation == 'cleanup_delete' and any(d['blocks_deletion'] and not d['automated_cleanup'] for d in report['dependencies']):
             raise HTTPException(409, detail={'code': 'dependency.unsupported_cleanup', 'message': 'Non-policy dependencies require explicit resolution.', 'report': report})
+        if operation == 'device_delete':
+            if not all(t['type'] == 'device' for t in targets):
+                raise HTTPException(400, detail='Device deletion accepts only device targets.')
+            if any(d['blocks_deletion'] and d['referencing_type'] != 'policy' for d in report['dependencies']):
+                raise HTTPException(409, detail={'code': 'dependency.blocked', 'message': 'An active job or other configuration still requires this device.', 'report': report})
         before = _candidate(db)
         removed_policies = []
-        if operation in ('cleanup', 'cleanup_delete'):
-            for p in report['policies']:
+        if operation in ('cleanup', 'cleanup_delete', 'device_delete'):
+            for p in (report['device_policies'] if operation == 'device_delete' else report['policies']):
                 _delete_policy(db, p['protocol'], p['id'], actor)
                 removed_policies.append(p)
         deleted_objects = []
-        if operation in ('delete', 'cleanup_delete'):
+        if operation in ('delete', 'cleanup_delete', 'device_delete'):
             # Fresh reinspection after the complete policy cleanup.
             current = inspect(db, targets)
             if current['blocked']:
@@ -252,7 +293,9 @@ def execute(db, targets, operation, revision, confirmation, actor):
                         # Explicitly preserve history even on SQLite connections
                         # where FK actions are not enabled. Never detach policy scope.
                         from ..models.audit_run import AuditRun, AuditFinding
-                        for history_model in (AuditFinding, AuditRun):
+                        from ..models.ncm import NcmBackupJobTarget, NcmDeployment
+                        from ..models.command_job import CommandJobTarget
+                        for history_model in (AuditFinding, AuditRun, NcmBackupJobTarget, NcmDeployment, CommandJobTarget):
                             db.query(history_model).filter(history_model.device_id == oid).update(
                                 {'device_id': None}, synchronize_session='fetch')
                     db.delete(obj)

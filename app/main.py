@@ -154,6 +154,8 @@ def create_app() -> FastAPI:
         from .database import get_engine
         from .scheduling_migration import migrate
         migrate(get_engine())
+        from .ncm_history_migration import migrate as migrate_ncm_history
+        migrate_ncm_history(get_engine())
         _sync_module_states()
         _seed_command_categories()
         _seed_admin_role_templates()
