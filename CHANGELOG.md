@@ -1,10 +1,10 @@
 # Changelog
 
-## Local-time scheduling and application version metadata
+## 1.0.0.1 — Local-time scheduling and application version metadata
 
 - System Settings offers an explicit IANA timezone preference. New backup schedules use it; existing backup and audit schedules remain Legacy UTC until deliberately converted. Schedule views include local and UTC execution times.
 - Daily schedules use calendar-aware timezone conversion with documented DST rules. Security Center audits record durable claims and exclude overlapping scheduler/manual execution.
-- Application version metadata is independent of tac_plus-ng and appears in the sidebar, Settings, and diagnostics. Release publication increments the four-part version and creates its matching tag atomically.
+- Application version metadata is independent of tac_plus-ng and appears in the sidebar, Settings, and diagnostics. Versions are recorded with repository updates; installing or displaying the version does not require GitHub Actions.
 
 
 ## Unreleased — Simpler deletion confirmation
