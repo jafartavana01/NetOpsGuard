@@ -12,10 +12,13 @@ persist a ConfigVersion row from it.
 from __future__ import annotations
 
 import hashlib
+import json
+from datetime import datetime, timezone
+from .audit_evidence import findings_digest, config_hash
 
 from sqlalchemy.orm import Session
 
-from ..models.audit_run import AuditComplianceResult, AuditDomainScore, AuditFinding, AuditRun
+from ..models.audit_run import AuditAssessment, AuditComplianceResult, AuditDomainScore, AuditFinding, AuditRun
 from ..security_center.engine.finding import Finding
 from ..security_center.engine.orchestrator import DeviceAuditResult
 
@@ -61,8 +64,17 @@ def persist_audit_result(
     for on the Network Operations side of this project.
     """
     all_findings = result.findings + result.correlation_findings
-    for finding in all_findings:
-        db.add(_finding_to_row(finding, audit_run.id, audit_run.device_id))
+    rows = [_finding_to_row(f, audit_run.id, audit_run.device_id) for f in all_findings]
+    manifest = dict(getattr(result, "assessment", {}) or {})
+    if manifest:
+        if manifest.get("config_hash") != config_hash(audit_run.raw_config or ""):
+            raise ValueError("Audit assessment does not match captured configuration.")
+        manifest.update(findings_hash=findings_digest(rows), score=result.overall.score)
+        db.add(AuditAssessment(audit_run_id=audit_run.id,
+                              device_identity=str(audit_run.device_id) if audit_run.device_id else None,
+                              manifest=json.dumps(manifest, sort_keys=True)))
+
+    db.add_all(rows)
 
     for domain, breakdown in result.domain_scores.items():
         db.add(AuditDomainScore(
@@ -96,6 +108,7 @@ def persist_audit_result(
     # pass), that's a deliberate, separately-justified addition.
     audit_run.compliance_score = result.overall.score
     audit_run.status = "completed"
+    audit_run.completed_at = datetime.now(timezone.utc)
 
 
 def hash_config_text(raw_config: str) -> str:

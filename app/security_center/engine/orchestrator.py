@@ -18,6 +18,7 @@ separate decision rather than an oversight.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 
 from ..checks.interfaces import assess_features, to_unified_findings
@@ -53,9 +54,10 @@ class DeviceAuditResult:
     domain_scores: dict[str, ScoreBreakdown]
     compliance: dict[str, dict[str, list[dict]]] = field(default_factory=dict)  # framework_key -> control -> entries
     compliance_status: dict[str, dict[str, str]] = field(default_factory=dict)  # framework_key -> control -> status
+    assessment: dict = field(default_factory=dict)
 
 
-def run_interface_checks(raw_config_text: str) -> list:
+def run_interface_checks(raw_config_text: str, errors: list | None = None) -> list:
     """
     Runs the interface-level engine over every interface in the config
     and returns its findings already converted to unified Finding
@@ -68,17 +70,24 @@ def run_interface_checks(raw_config_text: str) -> list:
     losing the device-level results the user actually asked for. The
     failure is logged, not swallowed silently.
     """
+    errors = errors if errors is not None else []
     try:
         device = parse_interface_config(raw_config_text)
     except Exception:
+        errors.append("interface_parse_failed")
         logger.exception("Interface parsing failed; continuing with device-level findings only.")
         return []
 
+    expected = re.findall(r'^interface\s+(.+?)\s*$', raw_config_text, re.M)
+    actual = [i.get("name") for i in device.get("interfaces", [])]
+    if sorted(expected) != sorted(n for n in actual if n):
+        errors.append("interface_coverage_mismatch")
     findings: list = []
     global_features = device.get("global", {})
     for iface in device.get("interfaces", []):
         name = iface.get("name")
         if not name:
+            errors.append("interface_identity_missing")
             continue
         try:
             assessment = assess_features(iface, global_features)
@@ -87,6 +96,7 @@ def run_interface_checks(raw_config_text: str) -> list:
             # One bad interface must not drop every other interface's
             # results -- same reasoning as the per-device isolation in
             # app.services.scheduled_audit.
+            errors.append("interface_assessment_failed")
             logger.exception("Interface assessment failed for %s; skipping that interface.", name)
     return findings
 
@@ -125,7 +135,8 @@ def run_device_audit(raw_config_text: str, policy: dict | None = None) -> Device
 
     device_findings = run_all_device_checks(cfg, policy, ctx)
     correlation_findings = run_correlation_engine(cfg, policy, ctx)
-    interface_findings = run_interface_checks(raw_config_text)
+    assessment_errors = []
+    interface_findings = run_interface_checks(raw_config_text, assessment_errors)
 
     # Correlation findings are scored alongside the individual findings
     # that fed them -- they're real, additional findings (their own
@@ -145,8 +156,10 @@ def run_device_audit(raw_config_text: str, policy: dict | None = None) -> Device
         compliance[key] = by_control
         compliance_status[key] = {control: control_status(entries) for control, entries in by_control.items()}
 
+    from ...services.audit_evidence import capture
     return DeviceAuditResult(
         hostname=cfg.get_hostname(),
+        assessment=capture(raw_config_text, policy, assessment_errors),
         findings=device_findings + interface_findings,
         correlation_findings=correlation_findings,
         overall=overall,

@@ -56,5 +56,48 @@
       if(!r.findings.length&&!r.correlation_findings.length){const p=document.createElement('p');p.textContent=r.status==='completed'?'No observations stored for this completed audit.':'Results unavailable for this run.';body.append(p);}evidence(body);
     }catch(e){if(active)body.textContent=e.message;}
   }
-  window.SecurityUI={mount,scopeDocument,can,dt,badge,evidence,audit,safeFetch};
+  function comparisonControls(root, runs) {
+    if (!root) return;
+    root.innerHTML='<h2>Compare audit evidence</h2><p class="security-note">Choose two runs for the same device. Missing findings never establish remediation. Uploaded evidence is assessed as supplied, not independently verified against the device.</p><div class="filter-bar"><label>Previous audit <select data-previous aria-label="Previous audit"></select></label><label>Newer audit <select data-current aria-label="Newer audit"></select></label><button type="button" class="btn-secondary btn-small" data-compare>Compare</button></div><div data-result role="status" aria-live="polite"></div>';
+    const previous=root.querySelector('[data-previous]'),current=root.querySelector('[data-current]'),button=root.querySelector('[data-compare]'),body=root.querySelector('[data-result]');
+    for(const run of runs){for(const select of [previous,current]){const option=document.createElement('option');option.value=run.id||run.audit_run_id;option.textContent=run.device_name+' · '+dt(run.started_at)+' · '+run.source+' · '+run.status+' · '+option.value.slice(0,8);select.append(option);}}
+    previous.selectedIndex=runs.length>1?1:0;
+    button.disabled=runs.length<2;
+    if(runs.length<2)body.textContent='Two recorded audit runs are required.';
+    let active=true;
+    AAAPlatform.onViewLeave(()=>{active=false;});
+    button.onclick=async()=>{
+      button.disabled=true;body.textContent='Comparing recorded evidence…';
+      try{
+        const response=await safeFetch('/api/security/audits/'+encodeURIComponent(previous.value)+'/compare/'+encodeURIComponent(current.value));
+        let data;
+        try { data=await response.json(); } catch { throw Error('Comparison response unavailable. No resolution is inferred.'); }
+        if(!response.ok)throw Error(response.status===403?'Permission denied. Your role does not allow this operation.':response.status===401?'Session expired. Sign in again.':typeof data.detail==='string'?data.detail:'Comparison unavailable. No resolution is inferred.');
+        if(!active)return;
+        body.replaceChildren();
+        const intro=document.createElement('p');intro.textContent=data.device_name+' · Previous '+data.from_run_id+' → Newer '+data.to_run_id;body.append(intro);
+        const score=document.createElement('p');score.textContent=data.score_delta==null?'Score change unavailable: '+data.score_reason:'Comparable score change: '+(data.score_delta>0?'+':'')+data.score_delta;body.append(score);
+        for(const warning of data.warnings||[]){const p=document.createElement('p');p.className='security-note';p.textContent=warning;body.append(p);}
+        const labels={new:'New regression',first_observed:'First observed',resolved:'Confirmed resolved',persistent:'Persistent',indeterminate:'Indeterminate',manual_review:'Manual review'};
+        for(const [category,label] of Object.entries(labels)){
+          const section=document.createElement('section'),h=document.createElement('h3');h.textContent=label+' ('+(data.counts[category]||0)+')';section.append(h);
+          for(const item of data.comparisons.filter(i=>i.category===category)){
+            const details=document.createElement('details'),summary=document.createElement('summary');
+            const sample=item.current[0]||item.previous[0];summary.textContent=item.key[1]+' · '+item.key[0]+' · '+(item.key[2]||'Device-wide')+' · '+sample.title;details.append(summary);
+            const reason=document.createElement('p');reason.textContent=item.reason;details.append(reason);
+            for(const [label,findings] of [['Previous',item.previous],['Newer',item.current]]){
+              const title=document.createElement('h4');title.textContent=label+' evidence';details.append(title);
+              if(!findings.length){const p=document.createElement('p');p.textContent='Not evaluated / no stored observation.';details.append(p);}
+              for(const f of findings){const p=document.createElement('p');p.textContent='Status: '+f.status+' · Severity: '+f.severity;const pre=document.createElement('pre');pre.className='security-evidence';pre.textContent=(f.evidence||[]).join('\n')||'No separate evidence excerpts recorded; comparison requires a verified configuration capture and assessment manifest.';details.append(p,pre);}
+            }
+            section.append(details);
+          }
+          body.append(section);
+        }
+        evidence(body);
+      }catch(e){if(active)body.textContent=e.message||'Comparison unavailable. No resolution is inferred.';}
+      finally{if(active)button.disabled=runs.length<2;}
+    };
+  }
+  window.SecurityUI={mount,scopeDocument,can,dt,badge,evidence,audit,safeFetch,comparisonControls};
 })();

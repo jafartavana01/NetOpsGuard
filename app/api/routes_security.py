@@ -14,7 +14,7 @@ auditing are deliberately not combined into one call yet.
 """
 from __future__ import annotations
 
-from ..services import scheduled_audit, ncm_lock
+from ..services import scheduled_audit, ncm_lock, audit_comparison
 
 import uuid
 from datetime import datetime, timezone
@@ -296,12 +296,6 @@ def compare_audits(
     db: Session = Depends(get_db),
     _admin: AdminUser = Depends(require_permission("security:view")),
 ):
-    def _findings_by_key(run_id: str) -> dict[str, AuditFinding]:
-        rows = db.query(AuditFinding).filter(AuditFinding.audit_run_id == uuid.UUID(run_id)).all()
-        # Keyed by (check_id, interface_name) -- the same check on a
-        # different interface is a DIFFERENT finding, not the same one.
-        return {(f.check_id, f.interface_name): f for f in rows}
-
     try:
         from_run = db.query(AuditRun).filter(AuditRun.id == uuid.UUID(from_run_id)).first()
         to_run = db.query(AuditRun).filter(AuditRun.id == uuid.UUID(to_run_id)).first()
@@ -310,28 +304,27 @@ def compare_audits(
     if not from_run or not to_run:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Audit run not found.")
 
-    from_findings = _findings_by_key(from_run_id)
-    to_findings = _findings_by_key(to_run_id)
-
-    # "New" = failing now, wasn't a failing finding before (whether
-    # entirely absent, or present but passing/NA before).
-    new_findings = [
-        _finding_row_to_out(f) for key, f in to_findings.items()
-        if f.status == Status.FAIL.value and (key not in from_findings or from_findings[key].status != Status.FAIL.value)
-    ]
-    resolved_findings = [
-        _finding_row_to_out(f) for key, f in from_findings.items()
-        if f.status == Status.FAIL.value and (key not in to_findings or to_findings[key].status != Status.FAIL.value)
-    ]
-    persistent_findings = [
-        _finding_row_to_out(f) for key, f in to_findings.items()
-        if f.status == Status.FAIL.value and key in from_findings and from_findings[key].status == Status.FAIL.value
-    ]
-
-    score_delta = (to_run.overall_score or 0.0) - (from_run.overall_score or 0.0)
+    assessments = audit_comparison.load_assessments(db, [from_run, to_run])
+    old, new = assessments[from_run.id], assessments[to_run.id]
+    try:
+        result = audit_comparison.compare(old, new)
+    except audit_comparison.ComparisonError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc))
+    categories = ('new', 'first_observed', 'resolved', 'persistent', 'indeterminate', 'manual_review')
+    lists = {c + '_findings': [] for c in categories}
+    items = []
+    for item in result['items']:
+        item = dict(item)
+        item['previous'] = [_finding_row_to_out(f) for f in item['previous']]
+        item['current'] = [_finding_row_to_out(f) for f in item['current']]
+        selected = item['previous'] if item['category'] == 'resolved' else (item['current'] or item['previous'])
+        lists[item['category'] + '_findings'].extend(selected)
+        items.append(item)
     return AuditCompareOut(
-        from_run_id=from_run_id, to_run_id=to_run_id, score_delta=round(score_delta, 1),
-        new_findings=new_findings, resolved_findings=resolved_findings, persistent_findings=persistent_findings,
+        from_run_id=from_run_id, to_run_id=to_run_id, device_identity=new.identity,
+        device_name=to_run.device_name, score_delta=result['score_delta'], score_reason=result['score_reason'],
+        warnings=result['warnings'], comparisons=items,
+        counts={c: sum(i['category'] == c for i in items) for c in categories}, **lists,
     )
 
 
@@ -756,10 +749,13 @@ def get_security_dashboard(
     previous_scores = []
     for run in all_completed:
         seen.setdefault(run.device_id, []).append(run)
-    for device_runs in seen.values():
-        if len(device_runs) > 1 and device_runs[1].overall_score is not None:
-            previous_scores.append(device_runs[1].overall_score)
-    previous_average_score = round(sum(previous_scores) / len(previous_scores), 1) if previous_scores else None
+    pairs = [device_runs[:2] for device_runs in seen.values()]
+    assessments = audit_comparison.load_assessments(db, [r for pair in pairs for r in pair])
+    for pair in pairs:
+        if len(pair) == 2 and audit_comparison.score_comparison(assessments[pair[1].id], assessments[pair[0].id])[0] is not None:
+            previous_scores.append(pair[1].overall_score)
+    previous_average_score = (round(sum(previous_scores) / len(previous_scores), 1)
+                              if previous_scores and len(previous_scores) == len(runs) else None)
 
     severity_totals: dict = {}
     manual_review_findings = 0
@@ -1037,18 +1033,17 @@ def list_security_activity(
 
     # Walk oldest-first per device so each run's predecessor is the run
     # immediately before it, then look deltas up by run id.
+    assessments = audit_comparison.load_assessments(db, runs)
     by_device: dict = {}
     for run in sorted(runs, key=lambda r: r.started_at):
-        by_device.setdefault(run.device_id, []).append(run)
-
-    delta_by_run: dict = {}
+        identity = assessments[run.id].identity
+        if identity:
+            by_device.setdefault(identity, []).append(run)
+    delta_by_run = {}
     for device_runs in by_device.values():
-        previous_score = None
-        for run in device_runs:
-            if run.overall_score is not None:
-                if previous_score is not None:
-                    delta_by_run[run.id] = round(run.overall_score - previous_score, 1)
-                previous_score = run.overall_score
+        for previous, current in zip(device_runs, device_runs[1:]):
+            delta_by_run[current.id] = audit_comparison.score_comparison(
+                assessments[previous.id], assessments[current.id])[0]
 
     return [
         ActivityEventOut(

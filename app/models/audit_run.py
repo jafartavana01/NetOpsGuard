@@ -163,3 +163,17 @@ class AuditComplianceResult(Base):
     framework: Mapped[str] = mapped_column(String(64), nullable=False)   # e.g. "nist_800_53", "iso27002"
     control_id: Mapped[str] = mapped_column(String(32), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)      # pass | fail | manual_review | na
+
+
+class AuditAssessment(Base):
+    """Immutable execution provenance; identity deliberately has NO device FK.
+
+    Created with the result transaction. Existing runs remain without provenance.
+    create_all installs this additive table on both new and upgraded databases.
+    """
+    __tablename__ = "security_audit_assessments"
+    audit_run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("security_audit_runs.id", ondelete="CASCADE"), primary_key=True
+    )
+    device_identity: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    manifest: Mapped[str] = mapped_column(Text, nullable=False)

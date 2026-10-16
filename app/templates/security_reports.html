@@ -15,6 +15,7 @@
     <div class="empty-state">Loading…</div>
   </div>
 <div class="content-head"><h2>Recent Audit Runs</h2><p class="security-note">Latest 100 recorded runs, including standalone uploads and failed attempts. Open a saved audit for its recorded observations and timestamps.</p></div><div id="audit-activity-table">Loading audit history…</div>
+<section id="audit-comparison" aria-label="Audit comparison"></section>
 </main>
 {% endblock %}
 
@@ -88,7 +89,7 @@
   }
 
   OpsUI.table('reports-table-wrap');OpsUI.table('audit-activity-table');
-  (async()=>{const body=document.getElementById('audit-activity-table');try{const rows=await OpsUI.request('/api/security/activity?limit=100');body.innerHTML=rows.length?'<table class="data-table"><thead><tr><th>Device</th><th>Started</th><th>Source</th><th>Execution</th><th>Score</th><th>Saved audit</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+escapeHtml(r.device_name)+'</td><td>'+escapeHtml(SecurityUI.dt(r.started_at))+'</td><td>'+escapeHtml(r.source)+'</td><td>'+SecurityUI.badge(r.status)+'</td><td>'+(r.overall_score??'Unavailable')+'</td><td><button class="btn-secondary btn-small" data-audit="'+escapeHtml(r.audit_run_id)+'">Open audit</button></td></tr>').join('')+'</tbody></table>':'<div class="empty-state">No recorded audits.</div>';}catch(e){body.textContent=e.message;}})();
+  (async()=>{const body=document.getElementById('audit-activity-table');try{const rows=await OpsUI.request('/api/security/activity?limit=100');SecurityUI.comparisonControls(document.getElementById('audit-comparison'),rows);body.innerHTML=rows.length?'<table class="data-table"><thead><tr><th>Device</th><th>Started</th><th>Source</th><th>Execution</th><th>Score</th><th>Saved audit</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+escapeHtml(r.device_name)+'</td><td>'+escapeHtml(SecurityUI.dt(r.started_at))+'</td><td>'+escapeHtml(r.source)+'</td><td>'+SecurityUI.badge(r.status)+'</td><td>'+(r.overall_score??'Unavailable')+'</td><td><button class="btn-secondary btn-small" data-audit="'+escapeHtml(r.audit_run_id)+'">Open audit</button></td></tr>').join('')+'</tbody></table>':'<div class="empty-state">No recorded audits.</div>';}catch(e){body.textContent=e.message;}})();
   document.getElementById('audit-activity-table').onclick=e=>{const b=e.target.closest('[data-audit]');if(b)SecurityUI.audit(b.dataset.audit);};
   const auditId=new URLSearchParams(location.search).get('audit_id');if(auditId)SecurityUI.audit(auditId);
   loadReports();

@@ -71,6 +71,7 @@
   <div id="audit-history-table-wrap">
     <div class="empty-state">Loading…</div>
   </div>
+<section id="audit-comparison" aria-label="Audit comparison"></section>
 </main>
 
 <div class="modal-backdrop" id="audit-modal-backdrop" hidden>
@@ -508,6 +509,7 @@
       return;
     }
     const runs = await res.json();
+    SecurityUI.comparisonControls(document.getElementById('audit-comparison'),runs);
     if (!runs.length) {
       wrap.innerHTML = '<div class="empty-state">No audits yet — run one from the button above.</div>';
       return;

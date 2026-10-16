@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0.2 — Evidence-based audit comparison
+
+- Audit comparisons require an explicit comparable pass before confirming resolution. Missing checks, incomplete captures, changed scope, duplicate identities, and manual review no longer imply remediation.
+- Device history and Audit Reports show distinct comparison categories and paired evidence. Missing or incomparable scores no longer produce misleading score changes.
+- New assessments retain execution provenance and stable inventory identity without preventing device deletion. Historical observations remain unchanged; records without sufficient provenance are reported conservatively.
+
 ## 1.0.0.1 — Local-time scheduling and application version metadata
 
 - System Settings offers an explicit IANA timezone preference. New backup schedules use it; existing backup and audit schedules remain Legacy UTC until deliberately converted. Schedule views include local and UTC execution times.

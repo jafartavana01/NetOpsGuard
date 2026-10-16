@@ -84,13 +84,30 @@ class AuditRunDetailOut(AuditRunSummaryOut):
     compliance_summary: dict[str, dict]  # framework_key -> {"total": n, "fail": n, "controls": {...}}
 
 
+class AuditComparisonItemOut(BaseModel):
+    category: str
+    reason: str
+    key: tuple[str, str, str, str]
+    previous: list[FindingOut]
+    current: list[FindingOut]
+
+
 class AuditCompareOut(BaseModel):
     from_run_id: str
     to_run_id: str
-    score_delta: float
+    device_identity: str
+    device_name: str
+    score_delta: float | None
+    score_reason: str | None
+    warnings: list[str]
+    counts: dict[str, int]
+    comparisons: list[AuditComparisonItemOut]
     new_findings: list[FindingOut]
     resolved_findings: list[FindingOut]
     persistent_findings: list[FindingOut]
+    first_observed_findings: list[FindingOut]
+    indeterminate_findings: list[FindingOut]
+    manual_review_findings: list[FindingOut]
 
 
 class SecurityOverviewOut(BaseModel):
